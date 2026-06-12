@@ -1,18 +1,18 @@
-# scaffold
+# syncopateJS
 
-[![Use this template](https://img.shields.io/badge/Use%20this%20template-2ea44f?style=for-the-badge&logo=github)](https://github.com/victusfate/scaffold/generate)
+**Live demo: https://victusfate.github.io/syncopateJS/**
+
+Drop a video onto the page and it becomes a music video — beats detected
+live in the browser, effects firing in sync. Fully client-side: nothing
+leaves your machine. The app is a single self-contained HTML file in
+`experiments/syncopatejs/` (zero dependencies, zero build — see
+`experiments/README.md`).
+
+---
+
+## Development scaffold
 
 A minimal, cross-harness project scaffold for AI-assisted development. Drop it into any new project to get a consistent design → PRD → TDD workflow whether you're using Claude Code, Cursor, or Gemini CLI.
-
-## Usage
-
-**Browser / mobile:** hit "Use this template" above → create new repository → open in Claude Code.
-
-**CLI:**
-```bash
-gh repo create my-new-project --template victusfate/scaffold --private
-gh repo clone victusfate/my-new-project
-```
 
 ## Philosophy
 
