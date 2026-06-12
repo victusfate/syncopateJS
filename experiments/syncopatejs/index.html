@@ -151,6 +151,27 @@
     text-shadow: 0 0 14px var(--mag);
   }
   #nogl.show { display: flex; }
+
+  @media (max-width: 640px) {
+    #ui h1 { font-size: 1.5rem; letter-spacing: .28em; }
+    #ui p { font-size: .78rem; padding: 0 1.2rem; }
+    #ui .keys { display: none; }       /* keyboard shortcuts — no keyboard here */
+    #hud {
+      left: 8px; right: 8px; bottom: 10px; transform: none;
+      flex-wrap: wrap; justify-content: center; row-gap: 7px;
+      white-space: normal; gap: 10px; padding: 8px 10px; font-size: .72rem;
+    }
+    #hud .chip, #hud .shuf, #hud .bpm-box { white-space: nowrap; }
+    #sens { width: 64px; }
+    #transport {
+      left: 8px; right: 8px; top: 12px; bottom: auto; transform: none;
+      justify-content: center;
+    }
+    #seek { flex: 1; width: auto; min-width: 0; }
+    #toast { top: 64px; }
+    #drawer { left: 8px; right: 8px; width: auto; bottom: 118px; max-height: 46vh; }
+    #hint { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -822,6 +843,7 @@ const video = document.getElementById('v');
 video.loop = true;
 let mode = 'demo';            // 'demo' | 'video'
 let started = false;          // first user gesture happened
+const COARSE = matchMedia('(pointer: coarse)').matches;   // touch-first device
 let objectUrl = null;
 
 let AC = null, analyser = null, demoBus = null, mediaSrc = null, noiseBuf = null;
@@ -966,7 +988,7 @@ function loadVideo(file) {
   resetDetector();
   resetPerf();        // drop totals are per-source
   syncTransport();
-  video.play().catch(() => toast('press space to play'));
+  video.play().catch(() => toast(COARSE ? 'tap ▶ to play' : 'press space to play'));
   toast(file.name);
 }
 video.addEventListener('error', () => { if (mode === 'video') toast('could not decode that video'); });
@@ -1218,6 +1240,9 @@ function doSeek(deltaSec) {
 }
 playBtn.addEventListener('click', e => {
   e.stopPropagation();
+  // the picker's transient activation can expire before loadVideo's resume —
+  // this click is a fresh gesture, so retry here
+  if (AC && AC.state === 'suspended') AC.resume();
   if (mode === 'video') video.paused ? video.play() : video.pause();
 });
 seekEl.addEventListener('pointerdown', () => { scrubbing = true; });
@@ -1247,8 +1272,11 @@ function begin() {
     if (mode === 'demo') startDemo();
   }
 }
-uiEl.addEventListener('pointerdown', begin);
-canvas.addEventListener('pointerdown', begin);
+// 'click', not 'pointerdown': on touch devices pointerdown is not an
+// activation-triggering event, so AC.resume() would be denied and the
+// demo stays silent. click fires after pointerup and carries activation.
+uiEl.addEventListener('click', begin);
+canvas.addEventListener('click', begin);
 
 const fileEl = document.getElementById('file');
 document.getElementById('pick').addEventListener('click', () => fileEl.click());

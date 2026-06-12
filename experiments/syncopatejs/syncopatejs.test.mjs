@@ -204,6 +204,17 @@ test('structure: analyser configured per design (fftSize 2048, no smoothing)', (
   assert.match(html, /smoothingTimeConstant\s*=\s*0\b/);
 });
 
+test('structure: mobile — begin binds to click (touch activation), responsive layout', () => {
+  const html = readFileSync(HTML, 'utf8');
+  assert.match(html, /addEventListener\('click', begin\)/,
+    'begin must bind to click — pointerdown carries no user activation on touch');
+  assert.ok(!/addEventListener\('pointerdown', begin\)/.test(html),
+    'begin must not bind to pointerdown');
+  assert.match(html, /@media \(max-width: 640px\)/, 'small-screen media query');
+  assert.match(html, /playsinline/, 'video plays inline on iOS');
+  assert.match(html, /pointer: coarse/, 'coarse-pointer detection for touch copy');
+});
+
 test('structure: HUD has BPM readout, sensitivity slider, six chips, file input', () => {
   const html = readFileSync(HTML, 'utf8');
   assert.match(html, /id="bpm"/, 'BPM readout');
