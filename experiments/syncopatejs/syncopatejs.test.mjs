@@ -1175,3 +1175,31 @@ test('structure: perf panel exists and the app loop feeds it', () => {
   assert.ok(app.includes('missedVsync('), 'app uses missedVsync');
   assert.ok(app.includes("'f'"), 'f key toggles the panel');
 });
+
+test('structure: every __logic export the app uses is destructured', () => {
+  // a name used but missing from the destructure is a ReferenceError at
+  // runtime, invisible to the parse-only test above
+  const app = appScript();
+  const destructure = app.match(/const\s*\{([\s\S]*?)\}\s*=\s*globalThis\.__logic/);
+  assert.ok(destructure, 'app destructures globalThis.__logic');
+  const imported = new Set(destructure[1].split(',').map(s => s.trim()).filter(Boolean));
+  const body = app.slice(destructure.index + destructure[0].length);
+  for (const name of Object.keys(loadLogic(HTML))) {
+    if (new RegExp(`\\b${name}\\b`).test(body)) {
+      assert.ok(imported.has(name), `${name} is used by the app but not destructured`);
+    }
+  }
+});
+
+test('structure: top-level resize() runs after the GL state it drops', () => {
+  // resize() → dropGlTemporal() reads gl and glFeedback at script top level;
+  // if their let/const declarations come later, the TDZ throw kills the
+  // whole app script before any event handler binds (dead page on load)
+  const app = appScript();
+  const callAt = app.search(/^resize\(\);/m);
+  assert.ok(callAt > -1, 'top-level resize() call exists');
+  for (const decl of ['let gl =', 'const glFeedback =']) {
+    const at = app.indexOf(decl);
+    assert.ok(at > -1 && at < callAt, `${decl.split(' ')[1]} declared before top-level resize()`);
+  }
+});

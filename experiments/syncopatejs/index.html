@@ -804,7 +804,8 @@ globalThis.__logic = {
 const { spectralFlux, bandEnergy, adaptiveThreshold, stepOnset, estimateBpm, decayPulse,
         FX_REGISTRY, mulberry32, latencyMs, stepGrid, gridEvents, dealHand,
         sliceOffsets, wedgeAngles, posterizeCurve, ringIndex,
-        formatTime, seekTarget, missedVsync, frameStats } = globalThis.__logic;
+        formatTime, seekTarget, missedVsync, frameStats,
+        buildPassPlan, hslToRgb, packSprites } = globalThis.__logic;
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -829,6 +830,12 @@ noiseCv.width = noiseCv.height = 128;
   nctx.putImageData(img, 0, 0);
 }
 let glSizeDirty = true;     // set by resize(); the GL renderer reallocs targets
+// declared here, ahead of the GL section: the top-level resize() call below
+// reaches dropGlTemporal(), which reads gl and glFeedback — left in the GL
+// section they would still be in their temporal dead zone and throw, killing
+// the whole script
+let gl = null, glLost = false;
+const glFeedback = new Map();   // per-effect feedback textures
 
 function resize() {
   W = window.innerWidth; H = window.innerHeight;
@@ -1698,7 +1705,6 @@ atlasCv.height = ATLAS_CELL;
 }
 
 const IDENTITY3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-let gl = null, glLost = false;
 const glPrograms = new Map();
 let quadVao = null, srcTex = null, pingT = null, pongT = null, glNoiseTex = null;
 let srcT = null, glAtlasTex = null, spriteVao = null, spriteVB = null;
@@ -1754,8 +1760,8 @@ function mkTarget() {
 }
 
 // temporal state textures: per-effect feedback + the frame ring
+// (glFeedback itself is declared with the early GL state, above resize())
 const FEEDBACK_IDS = new Set(['echo-trails', 'time-smear', 'motion-ghost', 'droste']);
-const glFeedback = new Map();
 function glSizedTex() {
   const t = mkTex();
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
