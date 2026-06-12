@@ -1,0 +1,2134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>syncopateJS — drop a video, get a music video</title>
+<style>
+  :root { --mag: #ff3df0; --cyn: #2ff0ff; --vio: #8f5bff; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; }
+  #v { position: fixed; left: -9999px; top: 0; width: 8px; height: 8px; }
+
+  #ui {
+    position: fixed; inset: 0; z-index: 3; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; color: #e8f6ff; background: rgba(0,0,2,.45);
+    font-family: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+    transition: opacity 1.2s ease;
+  }
+  #ui.hidden { opacity: 0; pointer-events: none; }
+  #ui h1 {
+    font-size: 3rem; font-weight: normal; letter-spacing: .45em; margin: 0 0 1rem;
+    text-shadow: 0 0 18px var(--mag), 0 0 42px var(--mag), 2px 0 0 var(--cyn), -2px 0 0 var(--mag);
+  }
+  #ui p { margin: .3rem 0; letter-spacing: .14em; opacity: .8; font-size: .95rem;
+          text-shadow: 0 0 12px rgba(47,240,255,.7); }
+  #ui .keys { opacity: .45; font-size: .76rem; margin-top: 1.4rem; }
+
+  #hud {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2;
+    display: flex; align-items: center; gap: 14px; padding: 9px 16px;
+    font-family: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+    font-size: .78rem; color: #bfeaff; letter-spacing: .08em; white-space: nowrap;
+    background: rgba(4,2,12,.72); border: 1px solid rgba(143,91,255,.45);
+    border-radius: 12px; box-shadow: 0 0 24px rgba(143,91,255,.25), inset 0 0 18px rgba(47,240,255,.06);
+    backdrop-filter: blur(8px);
+  }
+  #hud .bpm-box { color: #fff; }
+  #bpm { display: inline-block; min-width: 3ch; text-align: right; color: var(--cyn);
+         text-shadow: 0 0 10px var(--cyn); font-size: .95rem; }
+  #sens { width: 90px; accent-color: var(--mag); }
+  .chip {
+    padding: 3px 9px; border-radius: 999px; cursor: pointer; user-select: none;
+    border: 1px solid rgba(160,180,210,.25); color: rgba(170,190,215,.45);
+    transition: all .15s ease;
+  }
+  .chip.on {
+    color: #eafcff; border-color: var(--cyn);
+    text-shadow: 0 0 8px var(--cyn); box-shadow: 0 0 10px rgba(47,240,255,.35), inset 0 0 8px rgba(47,240,255,.12);
+  }
+  #pick {
+    padding: 4px 12px; border-radius: 8px; cursor: pointer;
+    font: inherit; letter-spacing: inherit; color: #ffe3fc;
+    background: rgba(255,61,240,.12); border: 1px solid var(--mag);
+    text-shadow: 0 0 8px var(--mag); box-shadow: 0 0 12px rgba(255,61,240,.3);
+  }
+  #pick:hover { background: rgba(255,61,240,.25); }
+
+  #beatdot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-left: 8px; vertical-align: 1px; opacity: .25;
+    background: rgba(150,180,220,.5);
+  }
+  #beatdot.lock { background: var(--cyn); box-shadow: 0 0 10px var(--cyn), 0 0 22px var(--cyn); }
+  .shuf { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+  #shuffle { accent-color: var(--cyn); }
+  #drawerbtn {
+    padding: 4px 10px; border-radius: 8px; cursor: pointer;
+    font: inherit; letter-spacing: inherit; color: #d8fbff;
+    background: rgba(47,240,255,.10); border: 1px solid var(--cyn);
+    text-shadow: 0 0 8px var(--cyn); box-shadow: 0 0 12px rgba(47,240,255,.25);
+  }
+  #drawerbtn:hover { background: rgba(47,240,255,.22); }
+  #drawer {
+    position: fixed; right: 16px; bottom: 66px; z-index: 2; width: 234px;
+    max-height: min(62vh, 540px); overflow-y: auto; display: none;
+    padding: 10px 14px 12px; border-radius: 12px;
+    font-family: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+    font-size: .72rem; letter-spacing: .06em; color: #bfeaff;
+    background: rgba(4,2,12,.88); border: 1px solid rgba(143,91,255,.45);
+    box-shadow: 0 0 24px rgba(143,91,255,.25); backdrop-filter: blur(8px);
+  }
+  #drawer.open { display: block; }
+  #drawer h3 {
+    margin: .7em 0 .25em; font-size: .64rem; font-weight: normal;
+    letter-spacing: .3em; text-transform: uppercase; color: var(--vio);
+    text-shadow: 0 0 8px rgba(143,91,255,.8);
+  }
+  #drawer h3:first-child { margin-top: 0; }
+  #drawer label {
+    display: flex; align-items: center; gap: 7px; padding: 1px 0;
+    cursor: pointer; white-space: nowrap;
+  }
+  #drawer input { accent-color: var(--mag); }
+  #drawer .hv { margin-left: auto; font-size: .58rem; color: rgba(255,61,240,.55); letter-spacing: .15em; }
+
+  #transport {
+    position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 2;
+    display: none; align-items: center; gap: 10px; padding: 7px 14px;
+    font-family: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+    font-size: .74rem; color: #bfeaff; letter-spacing: .08em; white-space: nowrap;
+    background: rgba(4,2,12,.72); border: 1px solid rgba(143,91,255,.45);
+    border-radius: 12px; box-shadow: 0 0 24px rgba(143,91,255,.25);
+    backdrop-filter: blur(8px);
+  }
+  #transport.show { display: flex; }
+  #playbtn {
+    width: 32px; padding: 2px 0; border-radius: 8px; cursor: pointer; font: inherit;
+    color: #d8fbff; background: rgba(47,240,255,.10); border: 1px solid var(--cyn);
+    text-shadow: 0 0 8px var(--cyn);
+  }
+  #playbtn:hover { background: rgba(47,240,255,.22); }
+  #seek { width: min(34vw, 320px); accent-color: var(--cyn); }
+  #time { color: #fff; }
+
+  #perf {
+    position: fixed; top: 14px; left: 16px; z-index: 2; display: none;
+    padding: 8px 12px; border-radius: 10px; white-space: pre; pointer-events: none;
+    font-family: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+    font-size: .72rem; line-height: 1.55; letter-spacing: .06em; color: #bfeaff;
+    background: rgba(4,2,12,.78); border: 1px solid rgba(143,91,255,.45);
+    box-shadow: 0 0 24px rgba(143,91,255,.25); backdrop-filter: blur(8px);
+  }
+  #perf.show { display: block; }
+  #perf .good { color: var(--cyn); text-shadow: 0 0 8px var(--cyn); }
+  #perf .warn { color: #ffd24a; text-shadow: 0 0 8px rgba(255,210,74,.7); }
+  #perf .bad  { color: var(--mag); text-shadow: 0 0 8px var(--mag); }
+  #hint {
+    position: fixed; bottom: 16px; right: 18px; z-index: 2; pointer-events: none;
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .7rem;
+    letter-spacing: .1em; color: rgba(150,180,220,.4);
+  }
+  #toast {
+    position: fixed; top: 22px; left: 50%; transform: translateX(-50%); z-index: 2;
+    pointer-events: none; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: .85rem; letter-spacing: .15em; color: #eafcff;
+    text-shadow: 0 0 14px var(--cyn); opacity: 0; transition: opacity .5s ease;
+  }
+  #dropglow {
+    position: fixed; inset: 0; z-index: 4; pointer-events: none; opacity: 0;
+    border: 3px dashed var(--cyn); box-sizing: border-box;
+    box-shadow: inset 0 0 80px rgba(47,240,255,.35); transition: opacity .2s ease;
+  }
+  #dropglow.show { opacity: 1; }
+  #nogl {
+    position: fixed; inset: 0; z-index: 5; display: none;
+    align-items: center; justify-content: center; text-align: center;
+    color: #ffd9fb; background: #06020d;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 1rem; letter-spacing: .12em; line-height: 2;
+    text-shadow: 0 0 14px var(--mag);
+  }
+  #nogl.show { display: flex; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<video id="v" playsinline></video>
+<div id="ui">
+  <h1>syncopateJS</h1>
+  <p>drop a video — or click to hear the demo</p>
+  <p>beats are predicted live; 46 effects fire with the music</p>
+  <p class="keys">space play/pause &nbsp; d demo &nbsp; e effects &nbsp; r shuffle &nbsp; f fps &nbsp; s save png</p>
+</div>
+<div id="hud">
+  <span class="bpm-box">BPM <span id="bpm">—</span><span id="beatdot"></span></span>
+  <label>sens <input id="sens" type="range" min="0" max="100" value="65"></label>
+  <span class="chip"></span>
+  <span class="chip"></span>
+  <span class="chip"></span>
+  <span class="chip"></span>
+  <span class="chip"></span>
+  <span class="chip"></span>
+  <label class="shuf"><input id="shuffle" type="checkbox" checked> shuffle</label>
+  <button id="drawerbtn">fx</button>
+  <button id="pick">load video</button>
+  <input id="file" type="file" accept="video/*" hidden>
+</div>
+<div id="transport">
+  <button id="playbtn">▶</button>
+  <input id="seek" type="range" min="0" max="1000" value="0" step="1">
+  <span id="time">0:00 / 0:00</span>
+</div>
+<div id="drawer"></div>
+<div id="perf"></div>
+<div id="hint">[space] play &nbsp; [d]emo &nbsp; [e]ffects &nbsp; [r] shuffle &nbsp; [f]ps &nbsp; [s]ave</div>
+<div id="toast"></div>
+<div id="dropglow"></div>
+<div id="nogl">syncopateJS needs WebGL2<br>every 2020s-era browser has it — yours has it switched off</div>
+
+<script id="logic">
+'use strict';
+// Pure, DOM-free detection math — extracted and unit-tested in Node via
+// experiments/_harness/logic.mjs (see docs/beat-prism/plan.md).
+// IIFE so only __logic reaches the shared global scope.
+(() => {
+
+// Bass-weighted spectral flux: sum of positive per-bin differences between
+// consecutive magnitude spectra; bins below `bassBins` count twice (kick
+// and snare dominate perceived beat).
+function spectralFlux(prev, curr, bassBins) {
+  let sum = 0;
+  for (let i = 0; i < curr.length; i++) {
+    const d = curr[i] - (prev[i] ?? 0);
+    if (d > 0) sum += i < bassBins ? d * 2 : d;
+  }
+  return sum;
+}
+
+// Mean magnitude over bins [lo, hi) — hi exclusive, clamped; empty → 0.
+function bandEnergy(spectrum, lo, hi) {
+  const a = Math.max(0, lo | 0);
+  const b = Math.min(spectrum.length, hi | 0);
+  if (b <= a) return 0;
+  let sum = 0;
+  for (let i = a; i < b; i++) sum += spectrum[i];
+  return sum / (b - a);
+}
+
+const median = sorted => {
+  const n = sorted.length, m = n >> 1;
+  return n % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2;
+};
+
+// Adaptive onset threshold: mean + k · MAD over the flux history window,
+// where MAD is the *median* absolute deviation — robust to the onset
+// spikes that live in the same window. Empty history → Infinity so the
+// detector never fires blind.
+function adaptiveThreshold(history, k) {
+  if (!history.length) return Infinity;
+  let mean = 0;
+  for (const v of history) mean += v;
+  mean /= history.length;
+  const med = median([...history].sort((a, b) => a - b));
+  const mad = median(history.map(v => Math.abs(v - med)).sort((a, b) => a - b));
+  return mean + k * mad;
+}
+
+// Onset state machine. `state` = { history, lastOnsetMs }. The incoming
+// flux is compared against the threshold of the *prior* history (a spike
+// must not lift its own threshold), then appended and trimmed to the
+// window. Fires only outside the refractory period. Pure: returns
+// { fired, state } without mutating the input.
+function stepOnset(state, flux, nowMs, opts = {}) {
+  const k = opts.k ?? 1.5;
+  const window = opts.window ?? 43;
+  const refractoryMs = opts.refractoryMs ?? 180;
+  const history = state?.history ?? [];
+  const lastOnsetMs = state?.lastOnsetMs ?? -Infinity;
+  const fired = flux > adaptiveThreshold(history, k)
+             && nowMs - lastOnsetMs >= refractoryMs;
+  const nextHistory = history.concat(flux).slice(-window);
+  return { fired, state: { history: nextHistory, lastOnsetMs: fired ? nowMs : lastOnsetMs } };
+}
+
+// Tempo from the inter-onset-interval histogram. Each IOI is folded by
+// octave into the [70, 180) BPM range and histogrammed in the *period*
+// domain (15 ms bins) — periods are linear in timing jitter, so the mean
+// of the modal bin's neighborhood stays unbiased where a BPM-domain mean
+// would skew sharp. Null until ≥ 8 onsets.
+function estimateBpm(onsetTimesMs) {
+  if (!onsetTimesMs || onsetTimesMs.length < 8) return null;
+  const MIN_P = 60000 / 180, MAX_P = 60000 / 70, BIN = 15;
+  const periods = [];
+  for (let i = 1; i < onsetTimesMs.length; i++) {
+    let p = onsetTimesMs[i] - onsetTimesMs[i - 1];
+    if (p <= 0) continue;
+    while (p < MIN_P) p *= 2;
+    while (p >= MAX_P) p /= 2;
+    periods.push(p);
+  }
+  if (!periods.length) return null;
+  const bins = new Map();
+  for (const p of periods) {
+    const bin = Math.round(p / BIN);
+    bins.set(bin, (bins.get(bin) ?? 0) + 1);
+  }
+  let mode = 0, best = -1;
+  for (const [bin, count] of bins) if (count > best) { best = count; mode = bin; }
+  const near = periods.filter(p => Math.abs(p - mode * BIN) <= BIN * 2);
+  return 60000 / (near.reduce((a, b) => a + b, 0) / near.length);
+}
+
+// Frame-rate-independent exponential decay for beat-triggered effect
+// pulses: the value halves every halfLifeMs.
+const decayPulse = (value, dtMs, halfLifeMs) => value * Math.pow(2, -dtMs / halfLifeMs);
+
+// ──────────────── fx-pack (docs/beat-prism-fx-pack) ────────────────
+
+// Canonical effect registry — pure data; draw hooks live in the app
+// script keyed by id. cat fixes the render stage (geometry → color →
+// temporal → overlay → scene, registry order within a category).
+// kind: pulse (fires on a grid event, decays) | continuous (follows
+// band energy / time) | scheduled (toggles state on bar boundaries).
+// heavy: needs an extra full-frame draw; the conductor deals ≤ 2.
+const fx = (id, name, cat, kind, heavy) => ({ id, name, cat, kind, heavy });
+const FX_REGISTRY = [
+  // geometry (12) — original zoom + shake, 10 new
+  fx('zoom',          'zoom',          'geometry', 'pulse',      false),
+  fx('shake',         'shake',         'geometry', 'pulse',      false),
+  fx('rotate-jolt',   'rotate jolt',   'geometry', 'pulse',      false),
+  fx('spin-zoom',     'spin zoom',     'geometry', 'pulse',      false),
+  fx('squash',        'squash',        'geometry', 'pulse',      false),
+  fx('skew-tilt',     'skew tilt',     'geometry', 'pulse',      false),
+  fx('mirror-flip',   'mirror flip',   'geometry', 'scheduled',  false),
+  fx('kaleidoscope',  'kaleidoscope',  'geometry', 'continuous', true),
+  fx('tile-grid',     'tile grid',     'geometry', 'scheduled',  false),
+  fx('pixelate',      'pixelate',      'geometry', 'pulse',      false),
+  fx('slice-glitch',  'slice glitch',  'geometry', 'pulse',      false),
+  fx('v-slice',       'v-slice',       'geometry', 'pulse',      false),
+  // color (14) — original flash + chroma, 12 new
+  fx('hue-spin',      'hue spin',      'color',    'pulse',      false),
+  fx('sat-pump',      'sat pump',      'color',    'pulse',      false),
+  fx('bleach-burn',   'bleach burn',   'color',    'pulse',      false),
+  fx('gamma-flicker', 'gamma flicker', 'color',    'continuous', false),
+  fx('color-drain',   'color drain',   'color',    'pulse',      false),
+  fx('posterize',     'posterize',     'color',    'continuous', false),
+  fx('invert-strobe', 'invert strobe', 'color',    'pulse',      false),
+  fx('sepia-ghost',   'sepia ghost',   'color',    'continuous', true),
+  fx('duotone',       'duotone',       'color',    'continuous', true),
+  fx('thermal',       'thermal',       'color',    'continuous', true),
+  fx('channel-swap',  'channel swap',  'color',    'pulse',      true),
+  fx('neon-edge',     'neon edge',     'color',    'continuous', true),
+  fx('chroma',        'chroma',        'color',    'continuous', true),
+  fx('flash',         'flash',         'color',    'pulse',      false),
+  // temporal (8)
+  fx('echo-trails',   'echo trails',   'temporal', 'continuous', true),
+  fx('time-smear',    'time smear',    'temporal', 'continuous', true),
+  fx('motion-ghost',  'motion ghost',  'temporal', 'continuous', true),
+  fx('droste',        'droste',        'temporal', 'continuous', true),
+  fx('strobe-black',  'strobe black',  'temporal', 'pulse',      false),
+  fx('freeze-frame',  'freeze frame',  'temporal', 'scheduled',  true),
+  fx('stutter-loop',  'stutter loop',  'temporal', 'pulse',      true),
+  fx('interlace-roll','interlace roll','temporal', 'continuous', false),
+  // overlay (8) — original glow, 7 new
+  fx('glow',          'glow',          'overlay',  'continuous', false),
+  fx('scanlines',     'scanlines',     'overlay',  'continuous', false),
+  fx('vhs-band',      'vhs band',      'overlay',  'continuous', false),
+  fx('grain-burst',   'grain burst',   'overlay',  'pulse',      false),
+  fx('vignette-pump', 'vignette pump', 'overlay',  'pulse',      false),
+  fx('letterbox-snap','letterbox snap','overlay',  'scheduled',  false),
+  fx('starburst',     'starburst',     'overlay',  'pulse',      false),
+  fx('shockwave',     'shockwave',     'overlay',  'pulse',      false),
+  // scene (4) — original burst, 3 new
+  fx('burst',         'burst',         'scene',    'pulse',      false),
+  fx('lightning',     'lightning',     'scene',    'pulse',      false),
+  fx('confetti',      'confetti',      'scene',    'pulse',      false),
+  fx('glyph-pop',     'glyph pop',     'scene',    'pulse',      false),
+];
+
+// Deterministic 32-bit PRNG — the conductor and slice effects reuse it so
+// every hand and every glitch layout is reproducible from its seed.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Detection lags the audible hit by the FFT window center plus ~one rAF.
+// Onset timestamps are shifted back by this before phase-locking so the
+// grid predicts beats in audible time.
+const latencyMs = (fftSize, sampleRate) => (fftSize / 2 / sampleRate) * 1000 + 16;
+
+// Predictive beat grid — a phase-locked clock at the estimated BPM.
+// anchorMs is a reference beat instant (audible time); beatBase its
+// absolute beat number, kept monotone across re-locks so bar counting
+// survives. Call with onsetMs on detection, with onsetMs = null as a
+// per-frame tick (free-run + confidence-lapse bookkeeping). Pure.
+function stepGrid(grid, onsetMs, bpm, nowMs, opts = {}) {
+  const lockWindowMs = opts.lockWindowMs ?? 90;
+  const lerp = opts.lerp ?? 0.35;
+  const lapseMs = opts.lapseMs ?? 4000;
+  const latency = opts.latencyMs ?? 0;
+  const minOnsets = opts.minOnsets ?? 8;
+  const g = {
+    anchorMs: grid?.anchorMs ?? null,
+    periodMs: grid?.periodMs ?? null,
+    beatBase: grid?.beatBase ?? 0,
+    onsetCount: grid?.onsetCount ?? 0,
+    lastOnsetMs: grid?.lastOnsetMs ?? -Infinity,
+    confident: grid?.confident ?? false,
+  };
+  if (bpm != null) g.periodMs = 60000 / bpm;
+  if (onsetMs != null) {
+    const t = onsetMs - latency;          // detection time → audible time
+    g.onsetCount += 1;
+    g.lastOnsetMs = t;
+    if (g.anchorMs === null || g.periodMs === null) {
+      g.anchorMs = t;                     // first usable onset seeds the phase
+    } else {
+      const k = Math.round((t - g.anchorMs) / g.periodMs);
+      const pred = g.anchorMs + k * g.periodMs;
+      const off = t - pred;
+      if (Math.abs(off) <= lockWindowMs) {
+        g.anchorMs = pred + lerp * off;   // re-lock: ease phase toward the onset
+        g.beatBase += k;
+      } else if (!g.confident) {
+        g.anchorMs = t;                   // unconfident clock re-anchors freely
+        g.beatBase += k;
+      }
+      // confident clock ignores off-grid onsets entirely
+    }
+  }
+  if (nowMs - g.lastOnsetMs > lapseMs) {
+    g.onsetCount = 0;                     // lapse: require fresh evidence
+    g.confident = false;
+  } else {
+    g.confident = g.onsetCount >= minOnsets && g.periodMs !== null;
+  }
+  return g;
+}
+
+// Beat/bar boundaries the confident grid crossed in the half-open
+// window (prevMs, nowMs] — the render loop calls this once per frame
+// and fires pulse effects on the returned events. Pure.
+function gridEvents(grid, prevMs, nowMs) {
+  if (!grid?.confident || grid.anchorMs === null || grid.periodMs === null
+      || !(nowMs > prevMs)) return [];
+  const { anchorMs, periodMs, beatBase } = grid;
+  const events = [];
+  const jFirst = Math.floor((prevMs - anchorMs) / periodMs) + 1;
+  for (let j = jFirst; anchorMs + j * periodMs <= nowMs; j++) {
+    const timeMs = anchorMs + j * periodMs;
+    if (timeMs <= prevMs) continue;     // float-edge guard at the window start
+    const beatIndex = beatBase + j;
+    events.push({ timeMs, beatIndex, isBar: beatIndex % 4 === 0,
+                  barIndex: Math.floor(beatIndex / 4) });
+  }
+  return events;
+}
+
+// Per-strip pixel offsets for slice-glitch / v-slice, in [-max, max].
+function sliceOffsets(seed, count, maxOffset) {
+  const rng = mulberry32(seed);
+  return Array.from({ length: count }, () => (rng() * 2 - 1) * maxOffset);
+}
+
+// Wedge start angles for an n-wedge kaleidoscope.
+const wedgeAngles = n =>
+  Array.from({ length: n }, (_, i) => (i * Math.PI * 2) / n);
+
+// Shuffle conductor: deal the hand for one 4-bar window. Seeded and
+// deterministic; draws only from enabledIds; caps at 2 per category and
+// 2 heavy effects; targets 4–6, smaller only if the pool runs dry. Pure.
+function dealHand(registry, seed, enabledIds) {
+  const rng = mulberry32(seed);
+  const enabled = new Set(enabledIds);
+  const pool = registry.filter(e => enabled.has(e.id));
+  for (let i = pool.length - 1; i > 0; i--) {     // Fisher–Yates with the seeded rng
+    const j = Math.floor(rng() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const target = 4 + Math.floor(rng() * 3);       // 4–6
+  const hand = [], perCat = {};
+  let heavies = 0;
+  for (const e of pool) {
+    if (hand.length >= target) break;
+    if ((perCat[e.cat] ?? 0) >= 2) continue;
+    if (e.heavy && heavies >= 2) continue;
+    hand.push(e.id);
+    perCat[e.cat] = (perCat[e.cat] ?? 0) + 1;
+    if (e.heavy) heavies++;
+  }
+  return hand;
+}
+
+// Quantize v ∈ [0,1] onto `levels` bands (posterize transfer curve).
+function posterizeCurve(v, levels) {
+  const c = Math.min(1, Math.max(0, v));
+  return Math.round(c * (levels - 1)) / (levels - 1);
+}
+
+// Index of the frame `back` steps behind `head` in a ring of `size`.
+const ringIndex = (head, back, size) => (((head - back) % size) + size) % size;
+
+// ──────────────── webgl pass plan (docs/beat-prism-webgl) ────────────────
+
+// A "pass" is one fragment-shader draw over a full-screen quad. The plan
+// is the ordered list the GL frame executes: base (geometry) → color →
+// temporal → overlay. Light color and screen-space overlay effects fold
+// into one pass each (members listed); heavy color and temporal effects
+// keep individual programs. Scene sprites draw after the chain and are
+// not passes.
+const PASS_GATE = 0.02;   // a pulse decayed below this no longer earns a pass
+const COLOR_FOLD = ['hue-spin', 'sat-pump', 'bleach-burn', 'gamma-flicker',
+                    'color-drain', 'posterize', 'invert-strobe', 'flash'];
+const OVERLAY_FOLD = ['glow', 'scanlines', 'vhs-band', 'grain-burst',
+                      'vignette-pump', 'letterbox-snap', 'starburst', 'shockwave'];
+
+const FX_INDEX = new Map(FX_REGISTRY.map(e => [e.id, e]));
+
+// Per-effect liveness overrides — effects whose gating differs from their
+// kind's default: chroma is energy-driven (below ~half a pixel of split,
+// bass·30 ≤ 0.6, the pass isn't worth dispatching); freeze-frame only
+// manifests as the frozen collapse; stutter needs ring depth; strobe
+// keeps its even-frame parity.
+const LIVE_OVERRIDES = {
+  chroma: input => input.bass * 30 > 0.6,
+  'freeze-frame': () => false,
+  'stutter-loop': input => (input.pulses['stutter-loop'] ?? 0) > 0.2
+                        && (input.scheduled?.stutterBack ?? 0) >= 1,
+  'strobe-black': input => (input.pulses['strobe-black'] ?? 0) > 0.25
+                        && (input.frameNo ?? 0) % 2 === 0,
+};
+
+// Is this effect contributing pixels right now? Pulse effects must be
+// above the gate; continuous and scheduled effects ride activation.
+function passLive(effect, input) {
+  if (!input.active.has(effect.id)) return false;
+  const override = LIVE_OVERRIDES[effect.id];
+  if (override) return override(input);
+  if (effect.kind === 'pulse') return (input.pulses[effect.id] ?? 0) > PASS_GATE;
+  return true;
+}
+
+// Uniform synthesizers for solo (non-folded) passes that need more than
+// frame globals; absent entries mean the shader runs on uT/uRes alone.
+const SOLO_UNIFORMS = {
+  'channel-swap': input => ({ mix: Math.min(1, (input.pulses['channel-swap'] ?? 0) * 1.2) }),
+  chroma: input => ({ amount: input.bass * 30 }),
+  'stutter-loop': input => ({ back: input.scheduled?.stutterBack ?? 0 }),
+  'strobe-black': input => ({ strobe: Math.min(1, (input.pulses['strobe-black'] ?? 0) * 1.5) }),
+};
+
+// Combined transfer-curve uniforms for the single folded color pass —
+// the GL replacement for the old ctx.filter string stack. Multiplicative
+// members compose; neutral values mean "member not live". levels > 0
+// switches on true per-pixel posterize (GL-native upgrade).
+function colorFoldUniforms(members, pulses, ctx) {
+  const u = { brightness: 1, saturation: 1, hue: 0, gray: 0,
+              contrast: 1, invert: 0, flash: 0, levels: 0 };
+  const has = id => members.includes(id);
+  const P = id => pulses[id] ?? 0;
+  if (has('hue-spin')) u.hue = ctx.hueBase + P('hue-spin') * 45;
+  if (has('sat-pump')) u.saturation *= 1 + P('sat-pump') * 2.6;
+  if (has('bleach-burn')) {
+    u.brightness *= 1 + P('bleach-burn') * 1.5;
+    u.saturation *= 1 - P('bleach-burn') * 0.75;
+  }
+  if (has('gamma-flicker')) u.brightness *= 0.72 + ctx.treble * 1.8 + 0.18 * Math.sin(ctx.tSec * 39);
+  if (has('color-drain')) u.gray = P('color-drain');
+  if (has('posterize')) {
+    u.saturation *= 1.5;
+    u.contrast *= 2.2 + posterizeCurve(ctx.bass, 4) * 3;
+    u.brightness *= 1.1;
+    u.levels = 6;
+  }
+  if (has('invert-strobe')) u.invert = P('invert-strobe') > 0.5 ? 1 : 0;
+  if (has('flash')) u.flash = P('flash') * 0.38;
+  return u;
+}
+
+// Per-member intensities for the single folded overlay pass. Time-driven
+// motion (vhs scroll, starburst rotation) happens in the shader off uT;
+// these uniforms carry only the strengths.
+function overlayFoldUniforms(members, pulses, ctx) {
+  const u = { glow: 0, scanlines: 0, vhs: 0, grain: 0,
+              vignette: 0, letterbox: 0, starburst: 0, shockwave: 0 };
+  const has = id => members.includes(id);
+  const P = id => pulses[id] ?? 0;
+  if (has('glow')) u.glow = Math.min(1, ctx.treble * 2.2);
+  if (has('scanlines')) u.scanlines = 0.75;
+  if (has('vhs-band')) u.vhs = 1;
+  if (has('grain-burst')) u.grain = P('grain-burst') * 0.5;
+  if (has('vignette-pump')) u.vignette = P('vignette-pump');
+  if (has('letterbox-snap')) u.letterbox = ctx.lbPos ?? 0;
+  if (has('starburst')) u.starburst = P('starburst');
+  if (has('shockwave')) u.shockwave = P('shockwave');
+  return u;
+}
+
+// Column-major 3×3 multiply: result applies B first, then A.
+function mat3mul(A, B) {
+  const r = new Array(9);
+  for (let c = 0; c < 3; c++) {
+    for (let w = 0; w < 3; w++) {
+      r[c * 3 + w] = A[w] * B[c * 3] + A[3 + w] * B[c * 3 + 1] + A[6 + w] * B[c * 3 + 2];
+    }
+  }
+  return r;
+}
+
+// All affine geometry pulses composed into one sampling matrix (clip
+// space, origin at center — centering is free in GL). Same operation
+// order as the 2D ctx-transform stack: shake outermost, then zoom, jolt,
+// spin-zoom, squash, skew, mirror. Amplitudes are parity with the 2D
+// pipeline (shake-style pulses stay subtle, per design emphasis).
+function geometryMatrix({ pulses, active, joltDir, mirrorOn, shake }) {
+  const live = id => active.has(id) && (pulses[id] ?? 0) > PASS_GATE;
+  const P = id => pulses[id] ?? 0;
+  const rot = a => [Math.cos(a), Math.sin(a), 0, -Math.sin(a), Math.cos(a), 0, 0, 0, 1];
+  const scale = (x, y) => [x, 0, 0, 0, y, 0, 0, 0, 1];
+  // translation lives in m[6], m[7] (column-major)
+  let m = [1, 0, 0, 0, 1, 0, shake?.[0] ?? 0, shake?.[1] ?? 0, 1];
+  if (live('zoom')) m = mat3mul(m, scale(1 + P('zoom') * 0.07, 1 + P('zoom') * 0.07));
+  if (live('rotate-jolt')) m = mat3mul(m, rot(joltDir * P('rotate-jolt') * 0.12));
+  if (live('spin-zoom')) {
+    const z = 1 + P('spin-zoom') * 0.4;
+    m = mat3mul(m, mat3mul(rot(P('spin-zoom') * 0.55), scale(z, z)));
+  }
+  if (live('squash')) m = mat3mul(m, scale(1 + P('squash') * 0.2, 1 - P('squash') * 0.24));
+  if (live('skew-tilt')) {
+    const k = joltDir * P('skew-tilt');
+    m = mat3mul(m, [1, k * 0.14, 0, k * 0.3, 1, 0, 0, 0, 1]);
+  }
+  if (active.has('mirror-flip') && mirrorOn) m = mat3mul(m, scale(-1, 1));
+  return m;
+}
+
+// Ordered pass list from frame state. Pure and deterministic — registry
+// order within each section. input: { active: Set<id>, pulses: {id→0..1},
+// bass, treble: 0..1, tSec, hueBase, joltDir, sliceSeed, frameNo,
+// shake: [x,y], scheduled: { mirrorOn, tileN, lbOpen, lbPos, frozen,
+// stutterBack } }.
+// Returns [{ id, program, uniforms, members? }].
+function buildPassPlan(input) {
+  // a frozen hold replaces the whole chain with the held ring frame
+  if (input.scheduled?.frozen && input.active.has('freeze-frame')) {
+    return [{ id: 'freeze-frame', program: 'freeze', uniforms: {} }];
+  }
+  const live = id => {
+    const e = FX_INDEX.get(id);
+    return e ? passLive(e, input) : false;
+  };
+  const fold = (id, memberIds, mkUniforms) => {
+    const members = memberIds.filter(live);
+    return members.length
+      ? [{ id, program: id, uniforms: mkUniforms(members), members }] : [];
+  };
+  const solo = ids => ids.filter(live).map(id =>
+    ({ id, program: id, uniforms: SOLO_UNIFORMS[id]?.(input) ?? {} }));
+  const byCat = cat => FX_REGISTRY.filter(e => e.cat === cat).map(e => e.id);
+  const colorHeavy = byCat('color').filter(id => !COLOR_FOLD.includes(id));
+  const matrix = geometryMatrix({
+    pulses: input.pulses, active: input.active, joltDir: input.joltDir ?? 1,
+    mirrorOn: input.scheduled?.mirrorOn ?? false, shake: input.shake ?? [0, 0],
+  });
+  // base pass variant: geometry *replacements* are program forks (same
+  // priority chain as the 2D pipeline); pixelate is a UV-quantize uniform
+  // that rides whichever variant won.
+  const P = id => input.pulses[id] ?? 0;
+  const base = { id: 'base', program: 'base', uniforms: { matrix } };
+  base.uniforms.block = live('pixelate') ? 3 + P('pixelate') * 26 : 0;
+  if (live('kaleidoscope')) {
+    base.program = 'kaleido';
+    base.uniforms.wedges = 8;
+  } else if (live('tile-grid')) {
+    base.program = 'tile';
+    base.uniforms.tiles = input.scheduled?.tileN ?? 2;
+  } else if (live('slice-glitch')) {
+    base.program = 'slice';
+    base.uniforms.offsets = sliceOffsets(input.sliceSeed ?? 1, 14, 70 * P('slice-glitch'));
+  } else if (live('v-slice')) {
+    base.program = 'vslice';
+    base.uniforms.offsets = sliceOffsets((input.sliceSeed ?? 1) + 1, 14, 70 * P('v-slice'));
+  }
+  return [
+    base,
+    ...fold('color', COLOR_FOLD, members => colorFoldUniforms(members, input.pulses,
+        { bass: input.bass, treble: input.treble, tSec: input.tSec, hueBase: input.hueBase ?? 0 })),
+    ...solo(colorHeavy),
+    ...solo(byCat('temporal')),
+    ...fold('overlay', OVERLAY_FOLD, members => overlayFoldUniforms(members, input.pulses,
+        { treble: input.treble, tSec: input.tSec, lbPos: input.scheduled?.lbPos ?? 0 })),
+  ];
+}
+
+// hsl → rgb (h in degrees, s/l in 0..1) — the sprite layer's replacement
+// for the 2D pipeline's hsl() fillStyle strings.
+function hslToRgb(h, s, l) {
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [f(0), f(8), f(4)];
+}
+
+// Flatten scene elements into instanced-sprite buffers. Stride 10:
+// [cx, cy, w, h, rot, r, g, b, alpha, cell]. `add` draws additive
+// (burst glow, bolts, glyphs — the 2D 'lighter' group), `norm` draws
+// with normal alpha (confetti). Cells: 0 soft circle, 1 solid rect,
+// 2 soft bar, 3+ glyph atlas cells. Pure.
+function packSprites(particles, bolts, glyphs) {
+  const add = [], norm = [];
+  for (const p of particles) {
+    const f = 1 - p.age / p.life;
+    if (p.kind === 'confetti') {
+      const [r, g, b] = hslToRgb(p.hue, 0.95, 0.62);
+      norm.push(p.x, p.y, p.r * 2, p.r * 1.1, p.rot, r, g, b, Math.min(1, f * 1.6), 1);
+    } else {
+      const [r, g, b] = hslToRgb(p.hue, 1, 0.65);
+      add.push(p.x, p.y, p.r * (0.5 + f) * 6, p.r * (0.5 + f) * 6, 0, r, g, b, f * 0.9, 0);
+    }
+  }
+  for (const bolt of bolts) {
+    const f = 1 - bolt.age / bolt.life;
+    for (const [x1, y1, x2, y2] of bolt.segs) {
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      add.push((x1 + x2) / 2, (y1 + y2) / 2, len + 8, 14,
+               Math.atan2(y2 - y1, x2 - x1), 0.92, 0.96, 1, f, 2);
+    }
+  }
+  for (const g of glyphs) {
+    const f = 1 - g.age / g.life, pop = 1.35 - f * 0.35;
+    const [r, gg, b] = hslToRgb(g.hue, 1, 0.7);
+    add.push(g.x, g.y, g.size * pop, g.size * pop, 0, r, gg, b, f, 3 + g.ci);
+  }
+  return { add, norm };
+}
+
+// ──────────────── fps diagnostics ────────────────
+
+// Standard display refresh periods. The best sustained frame interval
+// snaps to the nearest so missed-vsync math stays exact (16.9 → 16.67).
+const REFRESH_RATES_HZ = [240, 165, 144, 120, 90, 75, 60, 50, 30];
+function snapRefreshMs(intervalMs) {
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) return null;
+  let best = null, bestD = Infinity;
+  for (const hz of REFRESH_RATES_HZ) {
+    const p = 1000 / hz;
+    const d = Math.abs(p - intervalMs);
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+// Vsync intervals a frame overshot: 2× the base period = 1 missed frame.
+// Rounding gives ~half-period tolerance for rAF timestamp jitter; no base
+// estimate yet (0/null) counts nothing rather than guessing.
+const missedVsync = (durMs, baseMs) =>
+  baseMs > 0 ? Math.max(0, Math.round(durMs / baseMs) - 1) : 0;
+
+// Summarize a window of frame durations (ms): fps from the mean, p95/max
+// spike sizes, the refresh base estimated from the 10th percentile (best
+// sustained pace — robust to one-off short frames), and how many vsyncs
+// the window missed against that base. Sustained half-rate therefore
+// reads as a lower base, not as a wall of drops. Pure.
+function frameStats(durations) {
+  if (!durations || !durations.length) {
+    return { fps: 0, avgMs: 0, p95Ms: 0, maxMs: 0, baseMs: null, dropped: 0 };
+  }
+  const sorted = [...durations].sort((a, b) => a - b);
+  const at = q => sorted[Math.floor(q * (sorted.length - 1))];
+  let sum = 0;
+  for (const d of durations) sum += d;
+  const avgMs = sum / durations.length;
+  const baseMs = snapRefreshMs(at(0.1));
+  let dropped = 0;
+  for (const d of durations) dropped += missedVsync(d, baseMs ?? 0);
+  return { fps: 1000 / avgMs, avgMs, p95Ms: at(0.95),
+           maxMs: sorted[sorted.length - 1], baseMs, dropped };
+}
+
+// m:ss readout for the transport bar; degenerate input shows 0:00.
+function formatTime(sec) {
+  if (!Number.isFinite(sec) || sec < 0) return '0:00';
+  const s = Math.floor(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// Clamped seek destination; a degenerate duration holds the position.
+function seekTarget(cur, dur, deltaSec) {
+  if (!Number.isFinite(dur) || dur <= 0) return Math.max(0, cur);
+  return Math.min(dur, Math.max(0, cur + deltaSec));
+}
+
+globalThis.__logic = {
+  spectralFlux, bandEnergy, adaptiveThreshold, stepOnset, estimateBpm, decayPulse,
+  FX_REGISTRY, mulberry32, latencyMs, stepGrid, gridEvents, dealHand,
+  sliceOffsets, wedgeAngles, posterizeCurve, ringIndex, formatTime, seekTarget,
+  snapRefreshMs, missedVsync, frameStats,
+  buildPassPlan, colorFoldUniforms, overlayFoldUniforms, geometryMatrix, mat3mul,
+  hslToRgb, packSprites,
+};
+})();
+</script>
+<script>
+'use strict';
+const { spectralFlux, bandEnergy, adaptiveThreshold, stepOnset, estimateBpm, decayPulse,
+        FX_REGISTRY, mulberry32, latencyMs, stepGrid, gridEvents, dealHand,
+        sliceOffsets, wedgeAngles, posterizeCurve, ringIndex,
+        formatTime, seekTarget, missedVsync, frameStats } = globalThis.__logic;
+
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// ---------- canvas (main = WebGL2; offscreen 2D buffers feed/await the port) ----------
+const canvas = document.getElementById('c');
+let ghStamp = 0;          // motion-ghost capture cadence (GL feedback)
+let W = 0, H = 0;
+
+// static noise tile for grain-burst / vhs-band, rendered once
+const noiseCv = document.createElement('canvas');
+noiseCv.width = noiseCv.height = 128;
+{
+  const nctx = noiseCv.getContext('2d');
+  const img = nctx.createImageData(128, 128);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = (Math.random() * 255) | 0;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 40 + Math.random() * 130;
+  }
+  nctx.putImageData(img, 0, 0);
+}
+let glSizeDirty = true;     // set by resize(); the GL renderer reallocs targets
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  dropGlTemporal(true);                       // sizes changed — drop ring + feedback
+  glSizeDirty = true;                         // ping-pong targets realloc next frame
+}
+window.addEventListener('resize', resize);
+
+// ---------- state ----------
+const video = document.getElementById('v');
+video.loop = true;
+let mode = 'demo';            // 'demo' | 'video'
+let started = false;          // first user gesture happened
+let objectUrl = null;
+
+let AC = null, analyser = null, demoBus = null, mediaSrc = null, noiseBuf = null;
+let spectrum = null, prevSpec = null;
+
+let onsetState = { history: [], lastOnsetMs: -Infinity };
+let onsetTimes = [];
+let bpm = null;
+let bassS = 0, trebleS = 0;   // smoothed band energies, 0..1
+
+// ---------- fx-pack state ----------
+const CATS = ['geometry', 'color', 'temporal', 'overlay', 'scene'];  // render order
+const FX_BY_ID = new Map(FX_REGISTRY.map(e => [e.id, e]));
+const enabled = Object.fromEntries(FX_REGISTRY.map(e => [e.id, true]));  // drawer pool
+const allIds = () => FX_REGISTRY.filter(e => enabled[e.id]).map(e => e.id);
+let shuffleOn = true;
+let hand = dealHand(FX_REGISTRY, 0, FX_REGISTRY.map(e => e.id));
+let activeSet = new Set(hand);
+const A = id => activeSet.has(id);
+
+const pulses = Object.fromEntries(
+  FX_REGISTRY.filter(e => e.kind === 'pulse').map(e => [e.id, 0]));
+const HALF_LIFE = {
+  zoom: 140, flash: 90, shake: 110,
+  'rotate-jolt': 160, 'spin-zoom': 230, squash: 150, 'skew-tilt': 150,
+  pixelate: 190, 'slice-glitch': 130, 'v-slice': 130,
+  'hue-spin': 220, 'sat-pump': 160, 'bleach-burn': 130, 'color-drain': 210,
+  'invert-strobe': 70, 'channel-swap': 150,
+  'strobe-black': 85, 'stutter-loop': 260,
+  'grain-burst': 110, 'vignette-pump': 190, starburst: 170, shockwave: 260,
+  burst: 120, confetti: 120, lightning: 100, 'glyph-pop': 120,
+};
+
+// beat grid + conductor
+let grid = null, prevFrameMs = 0, beatCount = 0, lastWindow = 0;
+let beatDot = 0, frameNo = 0;
+let hueBase = 0, sliceSeed = 1, joltDir = 1;
+let mirrorOn = false, tileN = 2, lbOpen = true, lbPos = 0, freezeUntil = 0;
+const beatPeriodMs = () => grid?.periodMs ?? (bpm ? 60000 / bpm : 500);
+const latMs = () => AC ? latencyMs(analyser.fftSize, AC.sampleRate) : latencyMs(2048, 44100);
+
+// frame ring — feeds freeze-frame and stutter-loop; allocated lazily,
+// released as soon as neither is enabled
+const RING_SIZE = 12;
+let ring = null, ringHead = -1, ringFill = 0;
+resize();   // deferred from the canvas section: resize() drops the ring
+
+// ---------- audio graph ----------
+function audioInit() {
+  if (AC) return;
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  analyser = AC.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0;   // smoothing would blur flux
+  analyser.connect(AC.destination);
+  demoBus = AC.createGain();
+  demoBus.gain.value = 0.9;
+  demoBus.connect(analyser);
+  spectrum = new Uint8Array(analyser.frequencyBinCount);
+  prevSpec = new Uint8Array(analyser.frequencyBinCount);
+  noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+
+const binOf = hz => AC ? Math.round(hz / (AC.sampleRate / 2048)) : 12;
+
+// ---------- demo mode: synthesized drum loop, through the same analyser ----------
+const DEMO_BPM = 124;
+let demoPlaying = false, demoTimer = null, demoStep = 0, demoNext = 0;
+
+function kick(t) {
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+  g.gain.setValueAtTime(0.001, t);
+  g.gain.exponentialRampToValueAtTime(1, t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+  o.connect(g); g.connect(demoBus);
+  o.start(t); o.stop(t + 0.3);
+}
+function snare(t) {
+  const n = AC.createBufferSource(); n.buffer = noiseBuf;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.8;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.5, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  n.connect(bp); bp.connect(g); g.connect(demoBus);
+  n.start(t); n.stop(t + 0.2);
+  const o = AC.createOscillator(); o.type = 'triangle'; o.frequency.value = 185;
+  const og = AC.createGain();
+  og.gain.setValueAtTime(0.25, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+  o.connect(og); og.connect(demoBus);
+  o.start(t); o.stop(t + 0.1);
+}
+function hat(t, vol) {
+  const n = AC.createBufferSource(); n.buffer = noiseBuf;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7200;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+  n.connect(hp); hp.connect(g); g.connect(demoBus);
+  n.start(t); n.stop(t + 0.06);
+}
+function scheduleDemo() {
+  if (!demoPlaying) return;
+  const stepDur = 60 / DEMO_BPM / 4;          // 16th notes
+  while (demoNext < AC.currentTime + 0.12) {  // 120 ms lookahead
+    const s = demoStep % 16;
+    if (s % 4 === 0) kick(demoNext);
+    if (s === 4 || s === 12) snare(demoNext);
+    if (s % 2 === 0) hat(demoNext, s % 4 === 2 ? 0.5 : 0.28);
+    demoStep++; demoNext += stepDur;
+  }
+}
+function startDemo() {
+  if (!AC || demoPlaying) return;
+  demoPlaying = true;
+  demoNext = AC.currentTime + 0.06;
+  demoTimer = setInterval(scheduleDemo, 30);
+}
+function stopDemo() {
+  demoPlaying = false;
+  clearInterval(demoTimer); demoTimer = null;
+}
+
+// ---------- video pipeline ----------
+function loadVideo(file) {
+  if (!file || !file.type.startsWith('video/')) { toast('that is not a video file'); return; }
+  begin();                          // drop / pick counts as the user gesture
+  stopDemo();
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(file);
+  if (!mediaSrc) {                  // created once per page life, then reused
+    mediaSrc = AC.createMediaElementSource(video);
+    mediaSrc.connect(analyser);
+  }
+  video.src = objectUrl;
+  mode = 'video';
+  resetDetector();
+  resetPerf();        // drop totals are per-source
+  syncTransport();
+  video.play().catch(() => toast('press space to play'));
+  toast(file.name);
+}
+video.addEventListener('error', () => { if (mode === 'video') toast('could not decode that video'); });
+
+function toDemo() {
+  if (mode === 'demo' && demoPlaying) return;
+  video.pause();
+  mode = 'demo';
+  resetDetector();
+  resetPerf();
+  syncTransport();
+  startDemo();
+  toast('demo loop');
+}
+
+function resetDetector() {
+  onsetState = { history: [], lastOnsetMs: -Infinity };
+  onsetTimes = [];
+  bpm = null;
+  grid = null;          // new source, new tempo — drop the old beat grid
+  beatDot = 0;
+  if (prevSpec) prevSpec.fill(0);
+}
+
+// ---------- detection ----------
+const sensEl = document.getElementById('sens');
+const sensK = () => 3.2 - 2.6 * (sensEl.value / 100);  // slider scales the threshold
+
+function detect(nowMs) {
+  analyser.getByteFrequencyData(spectrum);
+  const playing = mode === 'demo' ? demoPlaying : !(video.paused || video.ended);
+  if (playing) {
+    const flux = spectralFlux(prevSpec, spectrum, binOf(250));
+    const r = stepOnset(onsetState, flux, nowMs, { k: sensK() });
+    onsetState = r.state;
+    if (r.fired) onOnset(nowMs);
+  }
+  prevSpec.set(spectrum);
+  const bass = bandEnergy(spectrum, 0, binOf(250)) / 255;
+  const treble = bandEnergy(spectrum, binOf(4000), binOf(12000)) / 255;
+  bassS += (bass - bassS) * 0.25;
+  trebleS += (treble - trebleS) * 0.25;
+}
+
+function onOnset(nowMs) {
+  onsetTimes.push(nowMs);
+  if (onsetTimes.length > 32) onsetTimes.shift();
+  bpm = estimateBpm(onsetTimes);
+  const wasConfident = grid?.confident ?? false;
+  // detection time → audible time happens inside stepGrid via latencyMs
+  grid = stepGrid(grid, nowMs, bpm, nowMs, { latencyMs: latMs() });
+  // raw-onset fallback: until the grid is confident, beats fire on detection
+  if (!grid.confident && !wasConfident) fireBeat(nowMs);
+}
+
+// One beat of the show: pump every active pulse effect, spawn scene
+// elements, advance scheduled state on bars. Fired by gridEvents in the
+// frame a predicted beat elapses (confident grid) or by raw onsets.
+function fireBeat(nowMs) {
+  beatCount++;
+  beatDot = 1;
+  joltDir = -joltDir;
+  for (const id in pulses) if (A(id)) pulses[id] = 1;
+  if (A('hue-spin')) hueBase = (hueBase + 60) % 360;
+  if (A('slice-glitch') || A('v-slice')) sliceSeed = beatCount * 7349 + 13;
+  if (A('burst')) burst();
+  if (A('confetti')) confetti();
+  if (A('lightning')) spawnLightning();
+  if (A('glyph-pop')) spawnGlyphs();
+  if (beatCount % 4 === 0) fireBar(nowMs, beatCount >> 2);
+}
+
+// Bar boundary: scheduled effects toggle state; every 4 bars the
+// conductor deals a fresh hand (seed = the 4-bar window index).
+function fireBar(nowMs, bar) {
+  if (A('mirror-flip')) mirrorOn = !mirrorOn;
+  if (A('tile-grid')) tileN = tileN === 2 ? 3 : 2;
+  if (A('letterbox-snap')) lbOpen = !lbOpen;
+  if (A('freeze-frame') && bar % 2 === 0) freezeUntil = nowMs + beatPeriodMs();
+  const win = bar >> 2;
+  if (shuffleOn && win !== lastWindow) {
+    lastWindow = win;
+    hand = dealHand(FX_REGISTRY, win, allIds());
+    syncActive();
+  }
+}
+
+// ---------- scene elements (shared particle cap across burst + confetti) ----------
+const PARTICLE_CAP = 600;
+const particles = [];
+function burst() {
+  const n = Math.min(26, PARTICLE_CAP - particles.length);
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, TAU), sp = rand(130, 430);
+    particles.push({
+      kind: 'burst',
+      x: W / 2 + Math.cos(a) * rand(0, 40), y: H / 2 + Math.sin(a) * rand(0, 40),
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: rand(0.45, 1.1), age: 0, r: rand(1.2, 3),
+      hue: [305, 185, 262][(Math.random() * 3) | 0] + rand(-14, 14),
+    });
+  }
+}
+function confetti() {
+  const n = Math.min(30, PARTICLE_CAP - particles.length);
+  for (let i = 0; i < n; i++) {
+    particles.push({
+      kind: 'confetti',
+      x: rand(0, W), y: -12 - rand(0, H * 0.15),
+      vx: rand(-50, 50), vy: rand(80, 240),
+      life: rand(1.2, 2.4), age: 0, r: rand(3, 6.5),
+      rot: rand(0, TAU), vr: rand(-7, 7),
+      hue: rand(0, 360),
+    });
+  }
+}
+const bolts = [];
+function spawnLightning() {
+  const segs = [];
+  let x = rand(W * 0.2, W * 0.8), y = -10;
+  const yEnd = H * rand(0.55, 0.95);
+  while (y < yEnd) {
+    const nx = x + rand(-70, 70), ny = y + rand(34, 90);
+    segs.push([x, y, nx, ny]);
+    if (Math.random() < 0.3) segs.push([nx, ny, nx + rand(-90, 90), ny + rand(20, 60)]); // fork
+    x = nx; y = ny;
+  }
+  bolts.push({ segs, life: 0.28, age: 0 });
+  if (bolts.length > 4) bolts.shift();
+}
+const glyphs = [], GLYPH_SET = '◆▲●✦✸✚♦◢';
+function spawnGlyphs() {
+  const n = 1 + ((Math.random() * 3) | 0);
+  for (let i = 0; i < n; i++) {
+    const ci = (Math.random() * GLYPH_SET.length) | 0;
+    glyphs.push({
+      ch: GLYPH_SET[ci], ci,
+      x: rand(W * 0.15, W * 0.85), y: rand(H * 0.2, H * 0.8),
+      size: rand(42, 115), life: rand(0.4, 0.7), age: 0,
+      hue: [305, 185, 262][(Math.random() * 3) | 0],
+    });
+  }
+  if (glyphs.length > 14) glyphs.splice(0, glyphs.length - 14);
+}
+// ---------- HUD: hand chips, drawer, shuffle ----------
+const bpmEl = document.getElementById('bpm');
+const dotEl = document.getElementById('beatdot');
+const shuffleEl = document.getElementById('shuffle');
+const drawerEl = document.getElementById('drawer');
+const chips = [...document.querySelectorAll('.chip')];
+const drawerBoxes = [];
+
+// The drawer lists all 46 effects, one checkbox per registry entry,
+// grouped by category in render order. Checkboxes are the shuffle pool;
+// touching one is a manual change and switches shuffle off.
+for (const cat of CATS) {
+  const h = document.createElement('h3');
+  h.textContent = cat;
+  drawerEl.appendChild(h);
+  for (const e of FX_REGISTRY.filter(x => x.cat === cat)) {
+    const row = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.fx = e.id;
+    cb.checked = enabled[e.id];
+    cb.addEventListener('change', () => {
+      enabled[e.id] = cb.checked;
+      manualChange(`${e.name} ${cb.checked ? 'on' : 'off'}`);
+    });
+    row.appendChild(cb);
+    row.appendChild(document.createTextNode(' ' + e.name));
+    if (e.heavy) {
+      const hv = document.createElement('span');
+      hv.className = 'hv';
+      hv.textContent = 'heavy';
+      row.appendChild(hv);
+    }
+    drawerEl.appendChild(row);
+    drawerBoxes.push(cb);
+  }
+}
+
+// activeSet: the hand while shuffle conducts, the enabled pool when manual.
+function syncActive() {
+  activeSet = shuffleOn ? new Set(hand) : new Set(allIds());
+  const ids = [...activeSet].slice(0, 6);
+  chips.forEach((c, i) => {
+    const id = ids[i];
+    c.textContent = id ? FX_BY_ID.get(id).name : '';
+    c.dataset.fx = id ?? '';
+    c.style.display = id ? '' : 'none';
+    c.classList.toggle('on', !!id);
+  });
+  shuffleEl.checked = shuffleOn;
+  for (const cb of drawerBoxes) cb.checked = enabled[cb.dataset.fx];
+}
+function manualChange(msg) {
+  shuffleOn = false;
+  syncActive();
+  if (msg) toast(msg);
+}
+function enableShuffle() {
+  shuffleOn = true;
+  lastWindow = beatCount >> 4;
+  hand = dealHand(FX_REGISTRY, lastWindow, allIds());
+  syncActive();
+  toast('shuffle on');
+}
+// clicking a hand chip pins the rest and drops that one effect
+for (const c of chips) {
+  c.addEventListener('click', e => {
+    e.stopPropagation();
+    const id = c.dataset.fx;
+    if (!id) return;
+    const keep = new Set(activeSet);
+    keep.delete(id);
+    for (const f of FX_REGISTRY) enabled[f.id] = keep.has(f.id);
+    manualChange(`${FX_BY_ID.get(id).name} off`);
+  });
+}
+shuffleEl.addEventListener('change', () => {
+  if (shuffleEl.checked) enableShuffle();
+  else manualChange('shuffle off — drawer picks play');
+});
+document.getElementById('drawerbtn').addEventListener('click', e => {
+  e.stopPropagation();
+  drawerEl.classList.toggle('open');
+});
+syncActive();
+
+// ---------- transport (video mode only) ----------
+const transportEl = document.getElementById('transport');
+const playBtn = document.getElementById('playbtn');
+const seekEl = document.getElementById('seek');
+const timeEl = document.getElementById('time');
+let scrubbing = false;
+function syncTransport() {
+  transportEl.classList.toggle('show', started && mode === 'video');
+}
+function applySeek(t) {
+  if (mode !== 'video' || !Number.isFinite(video.duration)) return;
+  video.currentTime = t;
+  resetDetector();        // new position, new beat phase — the grid re-locks
+}
+function doSeek(deltaSec) {
+  if (mode !== 'video') return;
+  applySeek(seekTarget(video.currentTime, video.duration, deltaSec));
+  toast(`${deltaSec > 0 ? '+' : ''}${deltaSec} s`);
+}
+playBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  if (mode === 'video') video.paused ? video.play() : video.pause();
+});
+seekEl.addEventListener('pointerdown', () => { scrubbing = true; });
+window.addEventListener('pointerup', () => { scrubbing = false; });
+seekEl.addEventListener('input', () => {
+  if (Number.isFinite(video.duration)) applySeek((seekEl.value / 1000) * video.duration);
+});
+
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.style.opacity = 1;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.style.opacity = 0, 1800);
+}
+
+// ---------- input ----------
+const uiEl = document.getElementById('ui');
+function begin() {
+  audioInit();
+  if (AC && AC.state === 'suspended') AC.resume();
+  if (!started) {
+    started = true;
+    uiEl.classList.add('hidden');
+    syncTransport();
+    if (mode === 'demo') startDemo();
+  }
+}
+uiEl.addEventListener('pointerdown', begin);
+canvas.addEventListener('pointerdown', begin);
+
+const fileEl = document.getElementById('file');
+document.getElementById('pick').addEventListener('click', () => fileEl.click());
+fileEl.addEventListener('change', () => { loadVideo(fileEl.files[0]); fileEl.value = ''; });
+
+const dropglow = document.getElementById('dropglow');
+window.addEventListener('dragover', e => { e.preventDefault(); dropglow.classList.add('show'); });
+window.addEventListener('dragleave', e => { if (!e.relatedTarget) dropglow.classList.remove('show'); });
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  dropglow.classList.remove('show');
+  loadVideo(e.dataTransfer.files[0]);
+});
+
+window.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (!started) { begin(); return; }
+    if (mode === 'video') {
+      video.paused ? video.play() : video.pause();
+    } else {
+      demoPlaying ? stopDemo() : startDemo();
+    }
+  } else if (e.key === 'd') {
+    begin();
+    toDemo();
+  } else if (e.key === 's') {
+    // the GL back buffer isn't preserved across tasks — redraw, then capture
+    if (gl && !glLost && lastPlan) {
+      glRender(lastPlan, lastPlanT, lastPlanMs);
+      const sp = packSprites(particles, bolts, glyphs);
+      glSprites(sp.add, sp.norm);
+    }
+    const a = document.createElement('a');
+    a.download = 'syncopatejs.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+    toast('frame saved');
+  } else if (e.key === 'r') {
+    enableShuffle();
+  } else if (e.key === 'f') {
+    togglePerf();
+  } else if (e.key === 'e') {
+    drawerEl.classList.toggle('open');
+  } else if (e.key === '0') {
+    for (const id in enabled) enabled[id] = false;
+    manualChange('all effects off');
+  } else if (e.key === '9') {
+    for (const id in enabled) enabled[id] = true;
+    manualChange('all effects on');
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();               // keep a focused seek bar from double-stepping
+    doSeek(e.shiftKey ? 30 : 5);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    doSeek(e.shiftKey ? -30 : -5);
+  }
+});
+
+// ---------- webgl renderer ----------
+// One vertex shader for every pass: a full-screen quad, transformed by
+// uMatrix (identity except the base pass, which carries the composed
+// geometry matrix). Fragment shaders are registered per program key in
+// SHADERS; glRender executes whatever subset of the pass plan has a
+// registered program, so effect families come alive slice by slice.
+const QUAD_VS = `#version 300 es
+layout(location=0) in vec2 aPos;
+uniform mat3 uMatrix;
+out vec2 vUV;
+void main() {
+  vUV = aPos * 0.5 + 0.5;
+  vec3 p = uMatrix * vec3(aPos, 1.0);
+  gl_Position = vec4(p.xy, 0.0, 1.0);
+}`;
+
+// Shared fragment preamble: every pass gets resolution, time, and the
+// pixelate UV-quantizer (uBlock = 0 → off) so pixelate rides any variant.
+const FS_COMMON = `
+precision highp float;
+in vec2 vUV; out vec4 outColor;
+uniform sampler2D uTex;
+uniform vec2 uRes;
+uniform float uT;
+uniform float uBlock;
+uniform vec2 uFit;
+const float TAU = 6.28318530718;
+vec2 pixelUV(vec2 uv) {
+  if (uBlock < 0.5) return uv;
+  vec2 g = uRes / uBlock;
+  return (floor(uv * g) + 0.5) / g;
+}
+// aspect-fit sampling for the base family: video letterboxing happens
+// here (uFit > 1 → bars), not in a 2D canvas relay
+vec4 srcTexAt(vec2 uv) {
+  vec2 f = (uv - 0.5) * uFit + 0.5;
+  if (f.x < 0.0 || f.x > 1.0 || f.y < 0.0 || f.y > 1.0) return vec4(0.0, 0.0, 0.0, 1.0);
+  return texture(uTex, f);
+}`;
+
+const SHADERS = {
+  base: `#version 300 es${FS_COMMON}
+void main() { outColor = vec4(srcTexAt(pixelUV(vUV)).rgb, 1.0); }`,
+
+  // true polar kaleidoscope — aspect-corrected, mirrored alternate wedges,
+  // slow drift (GL-native upgrade over the 2D clipped-wedge approximation)
+  kaleido: `#version 300 es${FS_COMMON}
+uniform float uWedges;
+void main() {
+  vec2 c = vUV - 0.5;
+  c.x *= uRes.x / uRes.y;
+  float r = length(c);
+  float a = atan(c.y, c.x) + uT * 0.11;
+  float w = TAU / uWedges;
+  a = mod(a, w * 2.0);
+  a = abs(a - w);
+  vec2 uv = vec2(cos(a), sin(a)) * r;
+  uv.x *= uRes.y / uRes.x;
+  outColor = vec4(srcTexAt(pixelUV(clamp(uv + 0.5, 0.0, 1.0))).rgb, 1.0);
+}`,
+
+  tile: `#version 300 es${FS_COMMON}
+uniform float uTiles;
+void main() { outColor = vec4(srcTexAt(pixelUV(fract(vUV * uTiles))).rgb, 1.0); }`,
+
+  slice: `#version 300 es${FS_COMMON}
+uniform float uOffsets[14];
+void main() {
+  int i = int(floor((1.0 - vUV.y) * 14.0));
+  vec2 uv = vUV;
+  uv.x -= uOffsets[clamp(i, 0, 13)] / uRes.x;
+  outColor = vec4(srcTexAt(pixelUV(clamp(uv, 0.0, 1.0))).rgb, 1.0);
+}`,
+
+  vslice: `#version 300 es${FS_COMMON}
+uniform float uOffsets[14];
+void main() {
+  int i = int(floor(vUV.x * 14.0));
+  vec2 uv = vUV;
+  uv.y += uOffsets[clamp(i, 0, 13)] / uRes.y;
+  outColor = vec4(srcTexAt(pixelUV(clamp(uv, 0.0, 1.0))).rgb, 1.0);
+}`,
+
+  // ── color: the folded transfer pass + heavy programs ──
+  // (the upgrade-budget family: true per-pixel posterize, real RGB-split
+  // chroma, actual channel rotation, palette thermal — per design.md)
+  color: `#version 300 es${FS_COMMON}
+uniform float uBrightness, uSaturation, uHue, uGray, uContrast, uInvert, uFlash, uLevels;
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+vec3 hueRotate(vec3 c, float deg) {
+  float a = radians(deg), ca = cos(a), sa = sin(a);
+  mat3 m = mat3(
+    0.213 + ca * 0.787 - sa * 0.213, 0.715 - ca * 0.715 - sa * 0.715, 0.072 - ca * 0.072 + sa * 0.928,
+    0.213 - ca * 0.213 + sa * 0.143, 0.715 + ca * 0.285 + sa * 0.140, 0.072 - ca * 0.072 - sa * 0.283,
+    0.213 - ca * 0.213 - sa * 0.787, 0.715 - ca * 0.715 + sa * 0.715, 0.072 + ca * 0.928 + sa * 0.072);
+  return c * m;
+}
+void main() {
+  vec3 c = texture(uTex, vUV).rgb;
+  c *= uBrightness;
+  c = mix(vec3(dot(c, LUMA)), c, uSaturation);
+  if (abs(uHue) > 0.01) c = hueRotate(c, uHue);
+  c = mix(c, vec3(dot(c, LUMA)), uGray);
+  c = (c - 0.5) * uContrast + 0.5;
+  if (uLevels > 0.5) c = floor(clamp(c, 0.0, 1.0) * (uLevels - 1.0) + 0.5) / (uLevels - 1.0);
+  c = mix(c, 1.0 - c, uInvert);
+  c += uFlash * vec3(0.81, 0.91, 1.0);
+  outColor = vec4(c, 1.0);
+}`,
+
+  duotone: `#version 300 es${FS_COMMON}
+void main() {
+  float l = dot(texture(uTex, vUV).rgb, vec3(0.2126, 0.7152, 0.0722));
+  l = clamp((l - 0.5) * 1.15 + 0.5, 0.0, 1.0);
+  vec3 c = l * vec3(1.0, 0.24, 0.94);              // shadows → magenta
+  c += 0.2 * vec3(0.024, 0.137, 0.188);            // blacks lift toward deep cyan
+  outColor = vec4(c, 1.0);
+}`,
+
+  thermal: `#version 300 es${FS_COMMON}
+void main() {
+  float l = dot(texture(uTex, vUV).rgb, vec3(0.2126, 0.7152, 0.0722));
+  l = clamp((l - 0.5) * 1.25 + 0.55, 0.0, 1.0);
+  vec3 c = vec3(clamp(l * 2.4, 0.0, 1.0), pow(l, 1.8), pow(l, 4.0) * 0.6);
+  outColor = vec4(c, 1.0);
+}`,
+
+  'sepia-ghost': `#version 300 es${FS_COMMON}
+vec3 sep(vec3 c) {
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  return l * vec3(1.07, 0.74, 0.43);
+}
+void main() {
+  vec3 c = sep(texture(uTex, vUV).rgb) * 1.05;
+  c += 0.28 * sep(texture(uTex, vUV - vec2(9.0 / uRes.x, 0.0)).rgb);
+  outColor = vec4(c, 1.0);
+}`,
+
+  'channel-swap': `#version 300 es${FS_COMMON}
+uniform float uMix;
+void main() {
+  vec3 c = texture(uTex, vUV).rgb;
+  outColor = vec4(mix(c, c.gbr, uMix), 1.0);       // true channel rotation
+}`,
+
+  'neon-edge': `#version 300 es${FS_COMMON}
+void main() {
+  vec3 a = texture(uTex, vUV).rgb;
+  vec3 b = texture(uTex, vUV + vec2(2.0, 1.0) / uRes).rgb;
+  vec3 e = abs(a - b) * 6.0;                        // real edge difference
+  vec3 c = a * 0.18 + e * vec3(1.6, 2.3, 2.6);
+  outColor = vec4(c, 1.0);
+}`,
+
+  chroma: `#version 300 es${FS_COMMON}
+uniform float uAmount;
+void main() {
+  float dx = uAmount / uRes.x;
+  vec3 c;
+  c.r = texture(uTex, clamp(vUV + vec2(dx, 0.0), 0.0, 1.0)).r;
+  c.g = texture(uTex, vUV).g;
+  c.b = texture(uTex, clamp(vUV - vec2(dx, 0.0), 0.0, 1.0)).b;
+  outColor = vec4(c, 1.0);                          // true RGB split
+}`,
+
+  // ── temporal: uTex2 carries last frame's captured output / ring frames ──
+  'echo-trails': `#version 300 es${FS_COMMON}
+uniform sampler2D uTex2;
+void main() {
+  vec3 c = texture(uTex, vUV).rgb;
+  vec2 z = (vUV - 0.5) * (1.0 - 14.0 / uRes.y) + 0.5;   // slight outward zoom
+  c += texture(uTex2, z).rgb * 0.42;
+  outColor = vec4(c, 1.0);
+}`,
+
+  'time-smear': `#version 300 es${FS_COMMON}
+uniform sampler2D uTex2;
+void main() {
+  vec2 d = 4.0 / uRes;
+  vec3 f = (texture(uTex2, vUV + vec2(d.x, 0.0)) + texture(uTex2, vUV - vec2(d.x, 0.0))
+          + texture(uTex2, vUV + vec2(0.0, d.y)) + texture(uTex2, vUV - vec2(0.0, d.y))).rgb * 0.25;
+  outColor = vec4(mix(texture(uTex, vUV).rgb, f, 0.55), 1.0);
+}`,
+
+  'motion-ghost': `#version 300 es${FS_COMMON}
+uniform sampler2D uTex2;
+void main() {
+  vec2 drift = vec2(sin(uT * 2.3) * 10.0 / uRes.x, 0.0);
+  vec3 c = texture(uTex, vUV).rgb + texture(uTex2, clamp(vUV + drift, 0.0, 1.0)).rgb * 0.32;
+  outColor = vec4(c, 1.0);
+}`,
+
+  droste: `#version 300 es${FS_COMMON}
+uniform sampler2D uTex2;
+void main() {
+  vec3 c = texture(uTex, vUV).rgb;
+  vec2 d = (vUV - 0.5) / 0.62 + 0.5;                    // last frame nested in
+  if (all(greaterThanEqual(d, vec2(0.0))) && all(lessThanEqual(d, vec2(1.0)))) {
+    c = mix(c, texture(uTex2, d).rgb, 0.92);
+  }
+  outColor = vec4(c, 1.0);
+}`,
+
+  'strobe-black': `#version 300 es${FS_COMMON}
+uniform float uStrobe;
+void main() {
+  outColor = vec4(texture(uTex, vUV).rgb * (1.0 - uStrobe), 1.0);
+}`,
+
+  'interlace-roll': `#version 300 es${FS_COMMON}
+void main() {
+  float bh = 8.0;
+  float band = mod(vUV.y * uRes.y - mod(uT * 90.0, bh * 2.0), bh * 2.0);
+  vec3 c = texture(uTex, vUV).rgb;
+  if (band < bh) {                                      // every other band, torn
+    float j = (5.0 + sin(uT * 3.1) * 4.0) / uRes.x;
+    vec3 torn = texture(uTex, clamp(vUV - vec2(j, 0.0), 0.0, 1.0)).rgb;
+    c = mix(c, torn, 0.85);
+  }
+  outColor = vec4(c, 1.0);
+}`,
+
+  freeze: `#version 300 es${FS_COMMON}
+void main() { outColor = vec4(texture(uTex, vUV).rgb, 1.0); }`,
+
+  'stutter-loop': `#version 300 es${FS_COMMON}
+uniform sampler2D uTex2;
+void main() {
+  outColor = vec4(mix(texture(uTex, vUV).rgb, texture(uTex2, vUV).rgb, 0.9), 1.0);
+}`,
+
+  // ── overlay: all eight screen-space effects in one pass; zero-valued
+  // uniforms are no-ops so the fold costs one draw however many are live ──
+  overlay: `#version 300 es${FS_COMMON}
+uniform float uGlow, uScanlines, uVhs, uGrain, uVignette, uLetterbox, uStarburst, uShockwave;
+uniform sampler2D uNoise;
+void main() {
+  vec2 uv = vUV;
+  float yTop = (1.0 - vUV.y) * uRes.y;
+  // vhs band: rolling bright band, torn sideways, noisy
+  float bandY = mod(uT * 140.0, uRes.y + 120.0) - 60.0;
+  float inBand = uVhs * step(bandY, yTop) * step(yTop, bandY + 26.0);
+  if (inBand > 0.5) {
+    uv.x += (texture(uNoise, vec2(uT * 0.7, bandY / 128.0)).r - 0.5) * 18.0 / uRes.x;
+  }
+  vec3 c = texture(uTex, clamp(uv, 0.0, 1.0)).rgb;
+  if (inBand > 0.5) {
+    c += 0.1 * vec3(0.81, 0.92, 1.0);
+    c += texture(uNoise, vec2(vUV.x * uRes.x, mod(uT * 700.0, 100.0)) / 128.0).r * 0.2;
+  }
+  c += (texture(uNoise, vUV * uRes / 128.0 + vec2(uT * 9.7, uT * 5.3)).r) * uGrain * 0.6;
+  c *= 1.0 - uScanlines * 0.5 * step(2.0, mod(yTop, 4.0));
+  // edge glow rides the treble, hue drifting like the 2D border
+  float edge = min(min(vUV.x, 1.0 - vUV.x) * uRes.x, min(vUV.y, 1.0 - vUV.y) * uRes.y);
+  c += (0.5 + 0.5 * cos(uT * 0.9 + vec3(0.0, 2.1, 4.2))) * uGlow * smoothstep(26.0, 0.0, edge);
+  float m2 = min(uRes.x, uRes.y);
+  float r = length((vUV - 0.5) * uRes) / m2;
+  if (uVignette > 0.001) {
+    c *= 1.0 - smoothstep(0.62 - uVignette * 0.25, 0.95, r) * (0.55 + uVignette * 0.4);
+  }
+  if (uStarburst > 0.001) {
+    float a = atan((vUV.y - 0.5) * uRes.y, (vUV.x - 0.5) * uRes.x);
+    float rays = pow(abs(cos(a * 6.0 + uT * 0.35)), 48.0);
+    float reach = smoothstep(0.08 + uStarburst * 0.55, 0.04, r);
+    c += vec3(0.92, 1.0, 1.0) * uStarburst * rays * reach * smoothstep(0.02, 0.06, r);
+  }
+  if (uShockwave > 0.001) {
+    float R = 0.04 + (1.0 - uShockwave) * 0.65;       // expands as it fades
+    float ring = exp(-pow((r - R) * m2 / (3.0 + uShockwave * 9.0), 2.0));
+    c += vec3(0.59, 0.94, 1.0) * uShockwave * ring;
+  }
+  float bh = 0.13 * uLetterbox;
+  if (vUV.y < bh || vUV.y > 1.0 - bh) c = vec3(0.0);
+  outColor = vec4(c, 1.0);
+}`,
+
+  // demo-scene background: the old radial gradient, now a quad pass
+  demobg: `#version 300 es${FS_COMMON}
+void main() {
+  float m2 = min(uRes.x, uRes.y);
+  float r = length((vUV - 0.5) * uRes) / (m2 * 0.75);
+  outColor = vec4(mix(vec3(0.043, 0.016, 0.094), vec3(0.0), clamp(r, 0.0, 1.0)), 1.0);
+}`,
+};
+
+// ── sprite layer: instanced quads over the finished frame ──
+// instance stride 10 floats: cx, cy, w, h, rot, r, g, b, alpha, cell
+const SPRITE_VS = `#version 300 es
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec4 aPosSize;
+layout(location=2) in float aRot;
+layout(location=3) in vec4 aColorA;
+layout(location=4) in float aCell;
+uniform vec2 uRes;
+uniform float uCells;
+out vec2 vCellUV; out vec4 vColor;
+void main() {
+  vec2 corner = aCorner * 0.5;
+  float cr = cos(aRot), sr = sin(aRot);
+  vec2 off = vec2(corner.x * aPosSize.z, corner.y * aPosSize.w);
+  off = vec2(off.x * cr - off.y * sr, off.x * sr + off.y * cr);
+  vec2 px = aPosSize.xy + off;
+  gl_Position = vec4(px.x / uRes.x * 2.0 - 1.0, 1.0 - px.y / uRes.y * 2.0, 0.0, 1.0);
+  vCellUV = vec2((aCell + corner.x + 0.5) / uCells, corner.y + 0.5);
+  vColor = aColorA;
+}`;
+const SPRITE_FS = `#version 300 es
+precision highp float;
+in vec2 vCellUV; in vec4 vColor; out vec4 outColor;
+uniform sampler2D uAtlas;
+void main() {
+  float a = texture(uAtlas, vCellUV).a;
+  outColor = vec4(vColor.rgb * a * vColor.a, vColor.a * a);   // premultiplied
+}`;
+
+const LINE_VS = `#version 300 es
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec4 aColor;
+uniform vec2 uRes;
+out vec4 vColor;
+void main() {
+  gl_Position = vec4(aPos.x / uRes.x * 2.0 - 1.0, 1.0 - aPos.y / uRes.y * 2.0, 0.0, 1.0);
+  vColor = aColor;
+}`;
+const LINE_FS = `#version 300 es
+precision highp float;
+in vec4 vColor; out vec4 outColor;
+void main() { outColor = vColor; }`;
+
+// sprite atlas — rasterized ONCE at startup (generation-only 2D canvas,
+// per design.md); cells: 0 soft circle, 1 solid rect, 2 soft bar, 3+ glyphs
+const ATLAS_CELLS = 3 + GLYPH_SET.length, ATLAS_CELL = 64;
+const atlasCv = document.createElement('canvas');
+atlasCv.width = ATLAS_CELLS * ATLAS_CELL;
+atlasCv.height = ATLAS_CELL;
+{
+  const a = atlasCv.getContext('2d');
+  const g0 = a.createRadialGradient(32, 32, 0, 32, 32, 30);
+  g0.addColorStop(0, 'rgba(255,255,255,1)');
+  g0.addColorStop(0.35, 'rgba(255,255,255,.85)');
+  g0.addColorStop(1, 'rgba(255,255,255,0)');
+  a.fillStyle = g0;
+  a.fillRect(0, 0, 64, 64);
+  a.fillStyle = '#fff';
+  a.fillRect(64 + 4, 4, 56, 56);
+  const g2 = a.createLinearGradient(0, 20, 0, 44);
+  g2.addColorStop(0, 'rgba(255,255,255,0)');
+  g2.addColorStop(0.5, 'rgba(255,255,255,1)');
+  g2.addColorStop(1, 'rgba(255,255,255,0)');
+  a.fillStyle = g2;
+  a.fillRect(130, 20, 60, 24);
+  a.font = '48px ui-monospace, Menlo, Consolas, monospace';
+  a.textAlign = 'center';
+  a.textBaseline = 'middle';
+  a.fillStyle = '#fff';
+  for (let i = 0; i < GLYPH_SET.length; i++) {
+    a.fillText(GLYPH_SET[i], (3 + i) * 64 + 32, 34);
+  }
+}
+
+const IDENTITY3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+let gl = null, glLost = false;
+const glPrograms = new Map();
+let quadVao = null, srcTex = null, pingT = null, pongT = null, glNoiseTex = null;
+let srcT = null, glAtlasTex = null, spriteVao = null, spriteVB = null;
+let lineVao = null, lineVB = null;
+
+function compileProgram(vsSrc, fsSrc, label) {
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      throw new Error(`${label}: ${gl.getShaderInfoLog(s)}`);
+    }
+    return s;
+  };
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    throw new Error(`${label}: ${gl.getProgramInfoLog(p)}`);
+  }
+  return p;
+}
+const glProgram = key => {
+  if (!glPrograms.has(key)) {
+    glPrograms.set(key, SHADERS[key] ? compileProgram(QUAD_VS, SHADERS[key], key) : null);
+  }
+  return glPrograms.get(key);
+};
+const glProgramRaw = (key, vs, fs) => {
+  if (!glPrograms.has(key)) glPrograms.set(key, compileProgram(vs, fs, key));
+  return glPrograms.get(key);
+};
+
+function mkTex() {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function mkTarget() {
+  const tex = mkTex();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo };
+}
+
+// temporal state textures: per-effect feedback + the frame ring
+const FEEDBACK_IDS = new Set(['echo-trails', 'time-smear', 'motion-ghost', 'droste']);
+const glFeedback = new Map();
+function glSizedTex() {
+  const t = mkTex();
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  return t;
+}
+const feedbackTex = id => {
+  if (!glFeedback.has(id)) glFeedback.set(id, glSizedTex());
+  return glFeedback.get(id);
+};
+function dropGlTemporal(deleteTex) {
+  if (deleteTex && gl) {
+    for (const t of glFeedback.values()) gl.deleteTexture(t);
+    if (ring) for (const t of ring) if (t) gl.deleteTexture(t);
+  }
+  glFeedback.clear();
+  ring = null; ringHead = -1; ringFill = 0;
+}
+
+function glInit() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false });
+  if (!gl) {
+    document.getElementById('nogl').classList.add('show');
+    return false;
+  }
+  glPrograms.clear();
+  dropGlTemporal(false);    // context objects are gone — forget, don't delete
+  quadVao = gl.createVertexArray();
+  gl.bindVertexArray(quadVao);
+  const vb = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  srcTex = mkTex();
+  // static noise tile, uploaded once, tiling — feeds the overlay pass
+  glNoiseTex = mkTex();
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, noiseCv);
+  // sprite atlas, uploaded once
+  glAtlasTex = mkTex();
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlasCv);
+  // sprite VAO: shared quad corners + one interleaved instance buffer
+  spriteVao = gl.createVertexArray();
+  gl.bindVertexArray(spriteVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  spriteVB = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, spriteVB);
+  const S = 40;   // 10 floats per instance
+  for (const [loc, size, off] of [[1, 4, 0], [2, 1, 16], [3, 4, 20], [4, 1, 36]]) {
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, S, off);
+    gl.vertexAttribDivisor(loc, 1);
+  }
+  // line VAO: interleaved x, y, r, g, b, a
+  lineVao = gl.createVertexArray();
+  gl.bindVertexArray(lineVao);
+  lineVB = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, lineVB);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 24, 8);
+  glSizeDirty = true;
+  return true;
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); glLost = true; });
+canvas.addEventListener('webglcontextrestored', () => { glLost = false; glInit(); });
+
+function setUniforms(prog, uniforms) {
+  for (const [name, v] of Object.entries(uniforms)) {
+    const loc = gl.getUniformLocation(prog, 'u' + name[0].toUpperCase() + name.slice(1));
+    if (loc === null) continue;
+    if (Array.isArray(v)) {
+      if (v.length === 9) gl.uniformMatrix3fv(loc, false, v);
+      else if (v.length === 2) gl.uniform2fv(loc, v);
+      else gl.uniform1fv(loc, v);
+    } else gl.uniform1f(loc, v);
+  }
+}
+
+// Execute the pass plan: source texture → ping-pong chain → screen.
+// Video mode uploads the element straight to GL (letterboxing happens in
+// srcTexAt via uFit); demo mode renders the scene into the srcT target.
+// Either way, the chain's passes run at canvas resolution.
+function glRender(plan, tSec, nowMs) {
+  if (!gl || glLost || gl.isContextLost()) return;
+  if (glSizeDirty) {
+    for (const t of [pingT, pongT, srcT]) {
+      if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+    }
+    pingT = mkTarget(); pongT = mkTarget(); srcT = mkTarget();
+    glSizeDirty = false;
+  }
+  let readTex, fit = [1, 1];
+  if (mode === 'video' && video.readyState >= 2 && video.videoWidth) {
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    const sc = Math.min(W / video.videoWidth, H / video.videoHeight);
+    fit = [W / (video.videoWidth * sc), H / (video.videoHeight * sc)];
+    readTex = srcTex;
+  } else {
+    glDemoScene(tSec);
+    readTex = srcT.tex;
+  }
+  const passes = plan.filter(p => SHADERS[p.program]);
+  gl.bindVertexArray(quadVao);
+  gl.viewport(0, 0, W, H);
+  passes.forEach((pass, i) => {
+    const target = i === passes.length - 1 ? null : (readTex === pingT?.tex ? pongT : pingT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : null);
+    const prog = glProgram(pass.program);
+    gl.useProgram(prog);
+    gl.activeTexture(gl.TEXTURE0);
+    // the frozen collapse reads the held ring frame instead of the chain
+    const read = pass.id === 'freeze-frame' ? (ring?.[ringHead] ?? readTex) : readTex;
+    gl.bindTexture(gl.TEXTURE_2D, read);
+    gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
+    const mLoc = gl.getUniformLocation(prog, 'uMatrix');
+    if (mLoc) gl.uniformMatrix3fv(mLoc, false, pass.uniforms.matrix ?? IDENTITY3);
+    const rLoc = gl.getUniformLocation(prog, 'uRes');
+    if (rLoc) gl.uniform2f(rLoc, W, H);
+    const tLoc = gl.getUniformLocation(prog, 'uT');
+    if (tLoc) gl.uniform1f(tLoc, tSec ?? 0);
+    const fLoc = gl.getUniformLocation(prog, 'uFit');
+    if (fLoc) {            // only the first pass letterboxes the raw source
+      gl.uniform2f(fLoc, i === 0 ? fit[0] : 1, i === 0 ? fit[1] : 1);
+    }
+    setUniforms(prog, pass.uniforms);
+    // second sampler: per-effect feedback, or the ring frame to replay
+    let tex2 = null;
+    if (FEEDBACK_IDS.has(pass.id)) tex2 = feedbackTex(pass.id);
+    else if (pass.id === 'stutter-loop') {
+      tex2 = ring?.[ringIndex(ringHead, pass.uniforms.back, RING_SIZE)] ?? read;
+    }
+    if (tex2) {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, tex2);
+      gl.uniform1i(gl.getUniformLocation(prog, 'uTex2'), 1);
+      gl.activeTexture(gl.TEXTURE0);
+    }
+    if (pass.id === 'overlay') {
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, glNoiseTex);
+      gl.uniform1i(gl.getUniformLocation(prog, 'uNoise'), 2);
+      gl.activeTexture(gl.TEXTURE0);
+    }
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    // capture this pass's output for next frame (ghost on a 120 ms cadence)
+    if (FEEDBACK_IDS.has(pass.id)
+        && (pass.id !== 'motion-ghost' || nowMs - ghStamp > 120)) {
+      gl.bindTexture(gl.TEXTURE_2D, feedbackTex(pass.id));
+      gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, W, H);
+      if (pass.id === 'motion-ghost') ghStamp = nowMs;
+    }
+    if (target) readTex = target.tex;
+  });
+  // frame ring — capture the finished frame while freeze/stutter live;
+  // capture pauses during the hold, exactly like the 2D ring
+  if (A('freeze-frame') || A('stutter-loop')) {
+    if (!ring) { ring = new Array(RING_SIZE).fill(null); ringHead = -1; ringFill = 0; }
+    if (!(A('freeze-frame') && nowMs < freezeUntil)) {
+      ringHead = (ringHead + 1) % RING_SIZE;
+      const tex = ring[ringHead] ?? (ring[ringHead] = glSizedTex());
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, W, H);
+      ringFill = Math.min(RING_SIZE, ringFill + 1);
+    }
+  } else if (ring) {
+    for (const t of ring) if (t) gl.deleteTexture(t);
+    ring = null; ringFill = 0;
+  }
+}
+
+// Instanced sprite draw: `norm` with premultiplied alpha (confetti),
+// `add` additive (the 2D 'lighter' group). fbo null → over the screen.
+function glSprites(add, norm, fbo = null) {
+  if (!add.length && !norm.length) return;
+  const prog = glProgramRaw('_sprite', SPRITE_VS, SPRITE_FS);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(prog);
+  gl.uniform2f(gl.getUniformLocation(prog, 'uRes'), W, H);
+  gl.uniform1f(gl.getUniformLocation(prog, 'uCells'), ATLAS_CELLS);
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, glAtlasTex);
+  gl.uniform1i(gl.getUniformLocation(prog, 'uAtlas'), 3);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindVertexArray(spriteVao);
+  gl.enable(gl.BLEND);
+  const group = (arr, sf, df) => {
+    if (!arr.length) return;
+    gl.blendFunc(sf, df);
+    gl.bindBuffer(gl.ARRAY_BUFFER, spriteVB);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.DYNAMIC_DRAW);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, arr.length / 10);
+  };
+  group(norm, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  group(add, gl.ONE, gl.ONE);
+  gl.disable(gl.BLEND);
+}
+
+// Demo scene, all-GL: gradient quad + spectrum bars as glow sprites +
+// prism wireframe as additive lines — rendered into srcT for the chain.
+function glDemoScene(t) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, srcT.fbo);
+  gl.viewport(0, 0, W, H);
+  const bg = glProgram('demobg');
+  gl.useProgram(bg);
+  gl.uniformMatrix3fv(gl.getUniformLocation(bg, 'uMatrix'), false, IDENTITY3);
+  gl.uniform2f(gl.getUniformLocation(bg, 'uRes'), W, H);
+  gl.bindVertexArray(quadVao);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  const m = Math.min(W, H), cx = W / 2, cy = H / 2;
+  const bars = [];
+  const N = 96, R = m * 0.26;
+  for (let i = 0; i < N; i++) {
+    const v = spectrum ? spectrum[2 + Math.floor(Math.pow(i / N, 1.8) * 360)] / 255 : 0;
+    const ang = (i / N) * TAU + t * 0.12;
+    const len = Math.pow(v, 1.4) * m * 0.22 + 2;
+    const [r, g, b] = hslToRgb(((i / N) * 360 + t * 24) % 360, 1, 0.62);
+    const mid = R + len / 2;
+    bars.push(cx + Math.cos(ang) * mid, cy + Math.sin(ang) * mid,
+              len + 6, 8, ang, r, g, b, 0.75, 2);
+  }
+  const core = (3 + bassS * m * 0.03) * 6;          // glowing core follows the bass
+  bars.push(cx, cy, core, core, 0, 1, 1, 1, 1, 0);
+  glSprites(bars, [], srcT.fbo);
+
+  // rotating triangular prism wireframe (same projection as the 2D scene)
+  const s = m * (0.13 + 0.05 * bassS + 0.04 * pulses.zoom);
+  const ry = t * 0.5, rx = 0.45 + Math.sin(t * 0.21) * 0.3;
+  const pts = [];
+  for (const z of [-0.62, 0.62]) {
+    for (let i = 0; i < 3; i++) {
+      const a = ry * 0.55 + i * TAU / 3;
+      const x = Math.cos(a), y = Math.sin(a) * 1.12;
+      const y2 = y * Math.cos(rx) - z * Math.sin(rx);
+      const z2 = y * Math.sin(rx) + z * Math.cos(rx);
+      const x2 = x * Math.cos(ry) + z2 * Math.sin(ry);
+      const z3 = -x * Math.sin(ry) + z2 * Math.cos(ry);
+      const pr = 3 / (3 + z3);
+      pts.push([cx + x2 * pr * s, cy + y2 * pr * s]);
+    }
+  }
+  const edges = [[0, 1], [1, 2], [2, 0], [3, 4], [4, 5], [5, 3], [0, 3], [1, 4], [2, 5]];
+  const [lr, lg, lb] = hslToRgb((t * 40) % 360, 1, 0.68);
+  const verts = [];
+  for (const [a, b] of edges) {
+    verts.push(pts[a][0], pts[a][1], lr, lg, lb, 1,
+               pts[b][0], pts[b][1], lr, lg, lb, 1);
+  }
+  const lp = glProgramRaw('_line', LINE_VS, LINE_FS);
+  gl.useProgram(lp);
+  gl.uniform2f(gl.getUniformLocation(lp, 'uRes'), W, H);
+  gl.bindVertexArray(lineVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, lineVB);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArrays(gl.LINES, 0, verts.length / 6);
+  gl.disable(gl.BLEND);
+}
+glInit();
+
+// Scene-element simulation (positions/ages) — extracted from the old 2D
+// draw functions so spawned elements keep aging out while the GL sprite
+// layer is pending (slice 8 draws them).
+function ageScene(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.age += dt;
+    if (p.age >= p.life || !A(p.kind)) { particles.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.kind === 'confetti') {
+      p.vy += 420 * dt;
+      p.vx += Math.sin((p.age + p.rot) * 9) * 26 * dt;
+      p.rot += p.vr * dt;
+    } else { p.vx *= 0.985; p.vy *= 0.985; }
+  }
+  for (let i = bolts.length - 1; i >= 0; i--) {
+    if ((bolts[i].age += dt) >= bolts[i].life) bolts.splice(i, 1);
+  }
+  for (let i = glyphs.length - 1; i >= 0; i--) {
+    if ((glyphs[i].age += dt) >= glyphs[i].life) glyphs.splice(i, 1);
+  }
+}
+
+// ---------- fps diagnostics ----------
+// Pacing truth is the rAF delta: every frame's duration lands in a sliding
+// window summarized by frameStats (pure, tested). The draw timer measures
+// JS submission cost only — canvas work the GPU finishes later is invisible
+// to it, which is exactly why drops are counted from rAF deltas instead.
+const perfEl = document.getElementById('perf');
+const PERF_WINDOW = 180;       // 3 s of frames at 60 fps
+const PERF_GAP_MS = 250;       // a rAF gap this long is a tab switch, not a frame
+let perfOn = false, perfStats = null, perfNext = 0;
+let frameDurs = [], dropTotal = 0, drawMsS = 0;
+
+function resetPerf() { frameDurs = []; dropTotal = 0; perfStats = null; }
+
+function perfTick(durMs, drawMs, nowMs) {
+  if (durMs > 0 && durMs <= PERF_GAP_MS) {
+    frameDurs.push(durMs);
+    if (frameDurs.length > PERF_WINDOW) frameDurs.shift();
+    dropTotal += missedVsync(durMs, perfStats?.baseMs ?? 0);
+  }
+  drawMsS += (drawMs - drawMsS) * 0.1;
+  if (nowMs < perfNext) return;
+  perfNext = nowMs + 250;                  // stats always fresh, DOM 4×/s
+  perfStats = frameStats(frameDurs);
+  if (perfOn) renderPerf();
+}
+
+function renderPerf() {
+  const s = perfStats;
+  if (!s) return;
+  const hz = s.baseMs ? Math.round(1000 / s.baseMs) : null;
+  const cls = !hz || s.fps >= hz * 0.95 ? 'good' : s.fps >= hz * 0.8 ? 'warn' : 'bad';
+  const winSec = frameDurs.length ? (frameDurs.length * s.avgMs / 1000).toFixed(1) : '0';
+  const srcLine = mode === 'video' && video.videoWidth
+    ? `src  ${video.videoWidth}×${video.videoHeight} → ${W}×${H}`
+    : `src  demo → ${W}×${H}`;
+  perfEl.innerHTML =
+    `fps  <span class="${cls}">${s.fps.toFixed(1)}</span>${hz ? ` / ${hz}` : ''}\n` +
+    `t    ${s.avgMs.toFixed(1)} avg · ${s.p95Ms.toFixed(1)} p95 · ${s.maxMs.toFixed(1)} max ms\n` +
+    `draw ${drawMsS.toFixed(1)} ms js\n` +
+    `drop ${s.dropped} / ${winSec}s · ${dropTotal} total\n` +
+    srcLine;
+}
+
+function togglePerf() {
+  perfOn = !perfOn;
+  perfEl.classList.toggle('show', perfOn);
+  if (perfOn) renderPerf();
+  toast(perfOn ? 'fps diagnostics on' : 'fps diagnostics off');
+}
+
+// ---------- main loop ----------
+let last = 0;
+let lastPlan = null, lastPlanT = 0, lastPlanMs = 0;   // for save-png redraw
+function frame(ms) {
+  const rawDt = ms - last;       // unclamped — diagnostics see real pacing
+  const dt = Math.min(0.05, rawDt / 1000 || 0.016);
+  last = ms;
+  frameNo++;
+  if (AC && analyser) detect(ms);
+  if (grid) {
+    grid = stepGrid(grid, null, bpm, ms);   // free-run / confidence-lapse tick
+    // while confident, pulses fire in the frame a predicted beat elapses —
+    // with the audible beat (latency-compensated), not after detection
+    for (const ev of gridEvents(grid, prevFrameMs, ms)) fireBeat(ev.timeMs);
+  }
+  prevFrameMs = ms;
+  const t0 = performance.now();
+  ageScene(dt);
+  // letterbox easing lived in the 2D render; the plan consumes the position
+  lbPos += ((A('letterbox-snap') && lbOpen ? 1 : 0) - lbPos) * Math.min(1, dt * 14);
+  const shakeAmt = A('shake') && pulses.shake > 0.02 ? pulses.shake * 13 : 0;
+  const shakeAng = rand(0, TAU);
+  const plan = buildPassPlan({
+    active: activeSet, pulses, bass: bassS, treble: trebleS, tSec: ms / 1000,
+    hueBase, joltDir, sliceSeed, frameNo,
+    shake: [Math.cos(shakeAng) * shakeAmt / (W / 2), Math.sin(shakeAng) * shakeAmt / (H / 2)],
+    scheduled: { mirrorOn, tileN, lbOpen, lbPos,
+                 frozen: ms < freezeUntil && A('freeze-frame') && ringFill > 0,
+                 stutterBack: ringFill >= 6 ? 1 + ((ms / 50) | 0) % 5 : 0 },
+  });
+  lastPlan = plan; lastPlanT = ms / 1000; lastPlanMs = ms;
+  glRender(plan, ms / 1000, ms);
+  if (gl && !glLost) {
+    const sp = packSprites(particles, bolts, glyphs);
+    glSprites(sp.add, sp.norm);
+  }
+  for (const key of Object.keys(pulses)) {
+    pulses[key] = decayPulse(pulses[key], dt * 1000, HALF_LIFE[key] ?? 150);
+  }
+  perfTick(rawDt, performance.now() - t0, ms);
+  bpmEl.textContent = bpm === null ? '—' : Math.round(bpm);
+  if (mode === 'video') {
+    timeEl.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+    playBtn.textContent = video.paused ? '▶' : '⏸';
+    if (!scrubbing && Number.isFinite(video.duration) && video.duration > 0) {
+      seekEl.value = Math.round((video.currentTime / video.duration) * 1000);
+    }
+  }
+  beatDot = decayPulse(beatDot, dt * 1000, 90);
+  dotEl.classList.toggle('lock', !!grid?.confident);
+  dotEl.style.opacity = grid?.confident ? 0.35 + 0.65 * beatDot : 0.25;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
