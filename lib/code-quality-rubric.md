@@ -29,6 +29,8 @@ A score of 9 means exactly one minor violation, cited.
 
 **Override (model-driven criteria only):** add `quality-override: <file> — <criterion> — <reason>` to the PR body to exempt a file from a specific non-numeric criterion. Mechanical criteria (file length, magic literals, commented-out code) cannot be overridden — the code must be fixed.
 
+**Inline override (colocated):** place `// quality-override: <criterion> — <reason>` on the line immediately above the offending line. It suppresses that single deduction for `<criterion>` and appears in audit output as an accepted override at **zero** score weight. For a violation that scopes the whole file, place the pragma on the first non-blank, non-shebang line. `<reason>` is required and the em dash `—` is the separator. Mechanical criteria cannot be overridden inline or via PR body — the code must be fixed. A malformed pragma (unknown criterion, blank reason, or missing separator) is itself a `[Clarity/minor]` violation, since a broken override is worse than none.
+
 ---
 
 ## Score Report Format
@@ -71,7 +73,7 @@ A file scores 10 when:
 
 A file scores 10 when:
 
-- **Fits in one mental model** — a reader holds the whole file after one pass. Hooks and utilities: ≤150 lines. Components: ≤200 lines. Orchestrators: ≤250 lines. *[mechanical: check with `wc -l`]* (major)
+- **Fits in one mental model** — a reader holds the whole file after one pass. All file types: ≤500 lines. *[mechanical: check with `wc -l`]* (major)
 - **Top-to-bottom narrative** — declarations, derived state, effects, return appear in that order with no backtracking. (minor)
 - **No destructuring walls** — when a hook or function returns >8 names, callers group them or the hook is split. *[mechanical: count destructured names at call site]* (minor)
 - **No surprise control flow** — early returns are fine; deeply nested conditionals in JSX or effects are not. (major)

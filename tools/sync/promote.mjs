@@ -1,11 +1,11 @@
 // File promotion engine — applies policy rules to scaffold source files.
-// Writes go through the shared clobber-safe engine (tools/lib/safe-write.mjs):
+// Writes go through the shared clobber-safe engine (tools/lib/safe-write.ts):
 // .scaffold-keep honored, sidecars for differing files unless force.
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve, normalize } from 'node:path';
 
-import { safeWrite, loadKeep } from '../lib/safe-write.mjs';
+import { safeWrite, loadKeep } from '../lib/safe-write.ts';
 
 /**
  * Promote files from srcRoot into destRoot according to policy rules.

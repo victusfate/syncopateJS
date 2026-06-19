@@ -304,7 +304,7 @@ const POLICY_BASE = {
 let hoist;
 {
   try {
-    ({ hoist } = await import('../hoist-skill/hoist.mjs'));
+    ({ hoist } = await import('../hoist-skill/hoist.ts'));
   } catch { /* fall through */ }
   assert('case 16a: hoist.mjs exports hoist()', typeof hoist === 'function');
 }

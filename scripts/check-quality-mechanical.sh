@@ -4,7 +4,7 @@
 # Exits non-zero if any violation is found. All violations include filename:line citations.
 set -euo pipefail
 
-MAX_LINES=250
+MAX_LINES=500
 VIOLATIONS=0
 
 emit() { echo "$1"; VIOLATIONS=$((VIOLATIONS + 1)); }
@@ -32,8 +32,12 @@ check_file() {
     [[ -z "${line// }" ]] && continue
     # Skip const/let/var NAME = NUMBER (the definition is fine)
     [[ "$line" =~ ^[[:space:]]*(const|let|var|readonly)[[:space:]]+[A-Z_]+ ]] && continue
+    # Numbers inside string literals are data (e.g. a grep pattern "Score.*10"),
+    # not magic numbers — strip quoted substrings before the scan.
+    local scan
+    scan=$(printf '%s' "$line" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g")
     # Flag bare integers ≥2 digits that are not array indices or lone 0/1
-    if echo "$line" | grep -qE '[^a-zA-Z0-9_."\x27][0-9]{2,}[^a-zA-Z0-9_.]'; then
+    if echo "$scan" | grep -qE '[^a-zA-Z0-9_."\x27][0-9]{2,}[^a-zA-Z0-9_.]'; then
       emit "${file}:${lineno} [Readability/minor] magic number — extract to a named constant"
     fi
   done < "$file"

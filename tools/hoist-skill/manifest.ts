@@ -1,8 +1,14 @@
 // Manifest read/write for .sync/hoisted.
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { dirname } from 'node:path';
 
-export function readManifest(path) {
+export interface ManifestEntry {
+  name: string;
+  harness: string;
+  ref: string;
+}
+
+export function readManifest(path: string): ManifestEntry[] {
   if (!existsSync(path)) return [];
   return readFileSync(path, 'utf8')
     .split('\n')
@@ -14,7 +20,7 @@ export function readManifest(path) {
     .filter(e => e.name && e.harness);
 }
 
-export function upsertManifest(path, newEntries) {
+export function upsertManifest(path: string, newEntries: ManifestEntry[]): void {
   mkdirSync(dirname(path), { recursive: true });
   const existing = readManifest(path);
   let header = '# .sync/hoisted — skills hoisted from scaffold; replayed by /pull-scaffold.\n# <name>\t<harness>\t<ref>\n';
