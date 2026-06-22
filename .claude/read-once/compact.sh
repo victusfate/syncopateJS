@@ -9,6 +9,9 @@
 
 set -euo pipefail
 
+# Hard dependency: jq. Missing → do nothing rather than abort under set -e.
+command -v jq >/dev/null 2>&1 || exit 0
+
 INPUT=$(cat)
 
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
@@ -18,15 +21,18 @@ if [ -z "$SESSION_ID" ]; then
 fi
 
 CACHE_DIR="${HOME}/.claude/read-once"
+HASH_PREFIX_LEN=16  # hex chars kept from sha256; must match hook.sh
+SHASUM_ALGO=256     # algorithm flag for shasum on macOS (-a 256 = sha256)
 
 # Must hash session_id the same way hook.sh does
 if command -v sha256sum >/dev/null 2>&1; then
-  SESSION_HASH=$(echo -n "$SESSION_ID" | sha256sum | cut -c1-16)
+  SESSION_HASH=$(echo -n "$SESSION_ID" | sha256sum | cut -c1-${HASH_PREFIX_LEN})
 else
-  SESSION_HASH=$(echo -n "$SESSION_ID" | shasum -a 256 | cut -c1-16)
+  SESSION_HASH=$(echo -n "$SESSION_ID" | shasum -a "$SHASUM_ALGO" | cut -c1-${HASH_PREFIX_LEN})
 fi
 
 CACHE_FILE="${CACHE_DIR}/session-${SESSION_HASH}.jsonl"
+SAVED_FILE="${CACHE_DIR}/session-${SESSION_HASH}.saved"
 STATS_FILE="${CACHE_DIR}/stats.jsonl"
 
 # Count entries being cleared (for stats)
@@ -35,6 +41,9 @@ if [ -f "$CACHE_FILE" ]; then
   CLEARED=$(wc -l < "$CACHE_FILE" | tr -d ' ')
   rm -f "$CACHE_FILE"
 fi
+
+# Reset the running savings counter for this session
+rm -f "$SAVED_FILE"
 
 # Clear snapshots for this session (diff mode)
 if [ -d "${CACHE_DIR}/snapshots" ]; then
